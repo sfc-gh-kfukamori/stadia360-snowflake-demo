@@ -168,617 +168,786 @@ df_cm_cv_f = filter_by_area(filter_by_campaign(df_cm_cv))
 
 
 # =====================================================
-# 1. 概況サマリー（KPI）
+# タブ構成
 # =====================================================
-st.header("概況サマリー")
+tab_dashboard, tab_ai = st.tabs(["ダッシュボード", "AI問い合わせ"])
 
-col1, col2, col3, col4 = st.columns(4)
+with tab_dashboard:
 
-with col1:
-    cm_count = df_tv_f[df_tv_f["CM_EXPOSED"] == True].shape[0]
-    total_tv = df_tv_f.shape[0]
-    cm_rate = (cm_count / total_tv * 100) if total_tv > 0 else 0
-    st.metric("CM接触件数", f"{cm_count:,}", f"接触率 {cm_rate:.1f}%")
+    # =====================================================
+    # 1. 概況サマリー（KPI）
+    # =====================================================
+    st.header("概況サマリー")
 
-with col2:
-    cv_count = df_site_f[df_site_f["CONVERSION_FLAG"] == True].shape[0]
-    total_sessions = df_site_f.shape[0]
-    cvr = (cv_count / total_sessions * 100) if total_sessions > 0 else 0
-    st.metric("サイトCV数", f"{cv_count:,}", f"CVR {cvr:.1f}%")
+    col1, col2, col3, col4 = st.columns(4)
 
-with col3:
-    store_visits = df_store_f.shape[0]
-    avg_stay = df_store_f["STAY_MINUTES"].mean() if store_visits > 0 else 0
-    st.metric("来店件数", f"{store_visits:,}", f"平均滞在 {avg_stay:.0f}分")
+    with col1:
+        cm_count = df_tv_f[df_tv_f["CM_EXPOSED"] == True].shape[0]
+        total_tv = df_tv_f.shape[0]
+        cm_rate = (cm_count / total_tv * 100) if total_tv > 0 else 0
+        st.metric("CM接触件数", f"{cm_count:,}", f"接触率 {cm_rate:.1f}%")
 
-with col4:
-    dl_count = df_app_dl_f.shape[0]
-    launch_count = df_app_launch_f.shape[0]
-    st.metric("アプリDL数", f"{dl_count:,}", f"起動 {launch_count:,}回")
+    with col2:
+        cv_count = df_site_f[df_site_f["CONVERSION_FLAG"] == True].shape[0]
+        total_sessions = df_site_f.shape[0]
+        cvr = (cv_count / total_sessions * 100) if total_sessions > 0 else 0
+        st.metric("サイトCV数", f"{cv_count:,}", f"CVR {cvr:.1f}%")
 
-col5, col6, col7, col8 = st.columns(4)
+    with col3:
+        store_visits = df_store_f.shape[0]
+        avg_stay = df_store_f["STAY_MINUTES"].mean() if store_visits > 0 else 0
+        st.metric("来店件数", f"{store_visits:,}", f"平均滞在 {avg_stay:.0f}分")
 
-with col5:
-    total_purchase = df_purchase_f["AMOUNT"].sum()
-    st.metric("購買総額", f"¥{total_purchase:,.0f}")
+    with col4:
+        dl_count = df_app_dl_f.shape[0]
+        launch_count = df_app_launch_f.shape[0]
+        st.metric("アプリDL数", f"{dl_count:,}", f"起動 {launch_count:,}回")
 
-with col6:
-    avg_nps = df_loyalty["NPS_SCORE"].mean()
-    st.metric("平均NPS", f"{avg_nps:.1f}")
+    col5, col6, col7, col8 = st.columns(4)
 
-with col7:
-    total_pv = df_site_f["PAGE_VIEWS"].sum()
-    st.metric("合計PV", f"{total_pv:,}")
+    with col5:
+        total_purchase = df_purchase_f["AMOUNT"].sum()
+        st.metric("購買総額", f"¥{total_purchase:,.0f}")
 
-with col8:
-    total_hours = df_tv_f["VIEWING_SECONDS"].sum() / 3600
-    st.metric("総視聴時間", f"{total_hours:,.0f}時間")
+    with col6:
+        avg_nps = df_loyalty["NPS_SCORE"].mean()
+        st.metric("平均NPS", f"{avg_nps:.1f}")
+
+    with col7:
+        total_pv = df_site_f["PAGE_VIEWS"].sum()
+        st.metric("合計PV", f"{total_pv:,}")
+
+    with col8:
+        total_hours = df_tv_f["VIEWING_SECONDS"].sum() / 3600
+        st.metric("総視聴時間", f"{total_hours:,.0f}時間")
 
 
-# =====================================================
-# 2. テレビ視聴分析
-# =====================================================
-st.header("テレビ視聴分析")
+    # =====================================================
+    # 2. テレビ視聴分析
+    # =====================================================
+    st.header("テレビ視聴分析")
 
-col_tv1, col_tv2 = st.columns(2)
+    col_tv1, col_tv2 = st.columns(2)
 
-with col_tv1:
-    st.subheader("チャンネル別視聴件数")
-    ch_data = df_tv_f.groupby("CHANNEL").agg(
-        VIEWS=("VIEWING_ID", "count"),
-        CM_EXPOSED=("CM_EXPOSED", "sum")
-    ).reset_index()
-    ch_data["CM接触率(%)"] = (ch_data["CM_EXPOSED"] / ch_data["VIEWS"] * 100).round(1)
+    with col_tv1:
+        st.subheader("チャンネル別視聴件数")
+        ch_data = df_tv_f.groupby("CHANNEL").agg(
+            VIEWS=("VIEWING_ID", "count"),
+            CM_EXPOSED=("CM_EXPOSED", "sum")
+        ).reset_index()
+        ch_data["CM接触率(%)"] = (ch_data["CM_EXPOSED"] / ch_data["VIEWS"] * 100).round(1)
 
-    chart_ch = (
-        alt.Chart(ch_data)
-        .mark_bar(color="#1f77b4")
-        .encode(
-            x=alt.X("VIEWS:Q", title="視聴件数"),
-            y=alt.Y("CHANNEL:N", title="チャンネル", sort="-x"),
-            tooltip=["CHANNEL", alt.Tooltip("VIEWS:Q", format=","), alt.Tooltip("CM接触率(%):Q", format=".1f")],
+        chart_ch = (
+            alt.Chart(ch_data)
+            .mark_bar(color="#1f77b4")
+            .encode(
+                x=alt.X("VIEWS:Q", title="視聴件数"),
+                y=alt.Y("CHANNEL:N", title="チャンネル", sort="-x"),
+                tooltip=["CHANNEL", alt.Tooltip("VIEWS:Q", format=","), alt.Tooltip("CM接触率(%):Q", format=".1f")],
+            )
         )
-    )
-    st.altair_chart(chart_ch, use_container_width=True)
+        st.altair_chart(chart_ch, use_container_width=True)
 
-with col_tv2:
-    st.subheader("時間帯別視聴トレンド")
-    hour_data = df_tv_f.groupby("VIEWING_HOUR").agg(
-        VIEWS=("VIEWING_ID", "count")
-    ).reset_index()
+    with col_tv2:
+        st.subheader("時間帯別視聴トレンド")
+        hour_data = df_tv_f.groupby("VIEWING_HOUR").agg(
+            VIEWS=("VIEWING_ID", "count")
+        ).reset_index()
 
-    chart_hour = (
-        alt.Chart(hour_data)
-        .mark_area(color="#ff7f0e", opacity=0.7, line=True)
-        .encode(
-            x=alt.X("VIEWING_HOUR:O", title="時間帯"),
-            y=alt.Y("VIEWS:Q", title="視聴件数"),
-            tooltip=["VIEWING_HOUR", alt.Tooltip("VIEWS:Q", format=",")],
+        chart_hour = (
+            alt.Chart(hour_data)
+            .mark_area(color="#ff7f0e", opacity=0.7, line=True)
+            .encode(
+                x=alt.X("VIEWING_HOUR:O", title="時間帯"),
+                y=alt.Y("VIEWS:Q", title="視聴件数"),
+                tooltip=["VIEWING_HOUR", alt.Tooltip("VIEWS:Q", format=",")],
+            )
         )
-    )
-    st.altair_chart(chart_hour, use_container_width=True)
+        st.altair_chart(chart_hour, use_container_width=True)
 
-# TV vs CTV 比較
-st.subheader("TV vs CTV デバイス別視聴比較")
-col_dev1, col_dev2 = st.columns(2)
+    # TV vs CTV 比較
+    st.subheader("TV vs CTV デバイス別視聴比較")
+    col_dev1, col_dev2 = st.columns(2)
 
-with col_dev1:
-    device_data = df_tv_f.groupby("DEVICE_TYPE").agg(
-        VIEWS=("VIEWING_ID", "count")
-    ).reset_index()
-    chart_device = (
-        alt.Chart(device_data)
-        .mark_arc(innerRadius=50)
-        .encode(
-            theta=alt.Theta("VIEWS:Q"),
-            color=alt.Color("DEVICE_TYPE:N", title="デバイス"),
-            tooltip=["DEVICE_TYPE", alt.Tooltip("VIEWS:Q", format=",")],
+    with col_dev1:
+        device_data = df_tv_f.groupby("DEVICE_TYPE").agg(
+            VIEWS=("VIEWING_ID", "count")
+        ).reset_index()
+        chart_device = (
+            alt.Chart(device_data)
+            .mark_arc(innerRadius=50)
+            .encode(
+                theta=alt.Theta("VIEWS:Q"),
+                color=alt.Color("DEVICE_TYPE:N", title="デバイス"),
+                tooltip=["DEVICE_TYPE", alt.Tooltip("VIEWS:Q", format=",")],
+            )
         )
-    )
-    st.altair_chart(chart_device, use_container_width=True)
+        st.altair_chart(chart_device, use_container_width=True)
 
-with col_dev2:
-    cm_by_device = df_tv_f.groupby("DEVICE_TYPE").agg(
-        TOTAL=("VIEWING_ID", "count"),
-        CM=("CM_EXPOSED", "sum")
+    with col_dev2:
+        cm_by_device = df_tv_f.groupby("DEVICE_TYPE").agg(
+            TOTAL=("VIEWING_ID", "count"),
+            CM=("CM_EXPOSED", "sum")
+        ).reset_index()
+        cm_by_device["CM接触率(%)"] = (cm_by_device["CM"] / cm_by_device["TOTAL"] * 100).round(1)
+        st.dataframe(cm_by_device.rename(columns={
+            "DEVICE_TYPE": "デバイス", "TOTAL": "視聴件数", "CM": "CM接触件数"
+        }), use_container_width=True)
+
+
+    # =====================================================
+    # CM効果分析（レスポンス分析）
+    # =====================================================
+    st.header("CM効果分析（レスポンス分析）")
+    st.caption("CM接触者のサイトコンバージョン（CV）を軸にした効果検証")
+
+    # CONVERSION_FLAG を数値型に変換（Snowflakeからobject型で返される場合がある）
+    df_cm_cv_f["CONVERSION_FLAG"] = pd.to_numeric(df_cm_cv_f["CONVERSION_FLAG"], errors="coerce").fillna(0).astype(int)
+
+    # --- 放送局別ドリル ---
+    col_cm1, col_cm2 = st.columns(2)
+
+    with col_cm1:
+        st.subheader("放送局別ドリル（CV率比較）")
+        ch_cm = df_cm_cv_f.groupby("CHANNEL").agg(
+            CM接触数=("VIEWING_ID", "count"),
+            CV数=("CONVERSION_FLAG", "sum"),
+        ).reset_index()
+        ch_cm["CV率(%)"] = (ch_cm["CV数"] / ch_cm["CM接触数"] * 100).round(2)
+
+        chart_ch_cv = (
+            alt.Chart(ch_cm)
+            .mark_bar(color="#1f77b4")
+            .encode(
+                x=alt.X("CV率(%):Q", title="CV率（%）"),
+                y=alt.Y("CHANNEL:N", title="放送局", sort="-x"),
+                tooltip=["CHANNEL",
+                          alt.Tooltip("CM接触数:Q", format=","),
+                          alt.Tooltip("CV数:Q", format=","),
+                          alt.Tooltip("CV率(%):Q", format=".2f")],
+            )
+        )
+        st.altair_chart(chart_ch_cv, use_container_width=True)
+
+    # --- クリエイティブドリル ---
+    with col_cm2:
+        st.subheader("クリエイティブドリル（素材別CV率）")
+        cr_cm = df_cm_cv_f[df_cm_cv_f["CREATIVE_NAME"].notna()].groupby("CREATIVE_NAME").agg(
+            CM接触数=("VIEWING_ID", "count"),
+            CV数=("CONVERSION_FLAG", "sum"),
+        ).reset_index()
+        cr_cm["CV率(%)"] = (cr_cm["CV数"] / cr_cm["CM接触数"] * 100).round(2)
+
+        chart_cr_cv = (
+            alt.Chart(cr_cm)
+            .mark_bar(color="#ff7f0e")
+            .encode(
+                x=alt.X("CV率(%):Q", title="CV率（%）"),
+                y=alt.Y("CREATIVE_NAME:N", title="CM素材", sort="-x"),
+                tooltip=["CREATIVE_NAME",
+                          alt.Tooltip("CM接触数:Q", format=","),
+                          alt.Tooltip("CV数:Q", format=","),
+                          alt.Tooltip("CV率(%):Q", format=".2f")],
+            )
+        )
+        st.altair_chart(chart_cr_cv, use_container_width=True)
+
+    # --- レスポンスヒートマップ ---
+    st.subheader("レスポンスヒートマップ（曜日×時間帯別CV数）")
+
+    hm_channel = st.selectbox("放送局で絞り込み", ["全局"] + sorted(df_cm_cv_f["CHANNEL"].unique().tolist()), key="hm_ch")
+    df_hm = df_cm_cv_f[df_cm_cv_f["CONVERSION_FLAG"] == True].copy()
+    if hm_channel != "全局":
+        df_hm = df_hm[df_hm["CHANNEL"] == hm_channel]
+
+    dow_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    dow_label = {"Mon": "月", "Tue": "火", "Wed": "水", "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"}
+    df_hm["曜日"] = df_hm["CM_DOW"].map(dow_label)
+
+    hm_data = df_hm.groupby(["曜日", "CM_HOUR"]).agg(
+        CV数=("VIEWING_ID", "count")
     ).reset_index()
-    cm_by_device["CM接触率(%)"] = (cm_by_device["CM"] / cm_by_device["TOTAL"] * 100).round(1)
-    st.dataframe(cm_by_device.rename(columns={
-        "DEVICE_TYPE": "デバイス", "TOTAL": "視聴件数", "CM": "CM接触件数"
-    }), use_container_width=True)
+    hm_data.rename(columns={"CM_HOUR": "時間帯"}, inplace=True)
 
+    dow_jp_order = ["月", "火", "水", "木", "金", "土", "日"]
 
-# =====================================================
-# CM効果分析（レスポンス分析）
-# =====================================================
-st.header("CM効果分析（レスポンス分析）")
-st.caption("CM接触者のサイトコンバージョン（CV）を軸にした効果検証")
+    chart_hm = (
+        alt.Chart(hm_data)
+        .mark_rect()
+        .encode(
+            x=alt.X("曜日:N", title="曜日", sort=dow_jp_order),
+            y=alt.Y("時間帯:O", title="時間帯", sort=list(range(24))),
+            color=alt.Color("CV数:Q", title="CV数",
+                            scale=alt.Scale(scheme="blues")),
+            tooltip=["曜日", alt.Tooltip("時間帯:O"), alt.Tooltip("CV数:Q", format=",")],
+        )
+        .properties(height=400)
+    )
+    st.altair_chart(chart_hm, use_container_width=True)
 
-# --- 放送局別ドリル ---
-col_cm1, col_cm2 = st.columns(2)
+    # --- レスポンス番組ランキング ---
+    st.subheader("レスポンス番組ランキング")
 
-with col_cm1:
-    st.subheader("放送局別ドリル（CV率比較）")
-    ch_cm = df_cm_cv_f.groupby("CHANNEL").agg(
+    pgm_data = df_cm_cv_f.groupby("PROGRAM_NAME").agg(
         CM接触数=("VIEWING_ID", "count"),
         CV数=("CONVERSION_FLAG", "sum"),
     ).reset_index()
-    ch_cm["CV率(%)"] = (ch_cm["CV数"] / ch_cm["CM接触数"] * 100).round(2)
+    pgm_data["CV率(%)"] = (pgm_data["CV数"] / pgm_data["CM接触数"] * 100).round(2)
+    pgm_data = pgm_data.sort_values("CV率(%)", ascending=False).reset_index(drop=True)
+    pgm_data.index = pgm_data.index + 1
+    pgm_data.index.name = "順位"
 
-    chart_ch_cv = (
-        alt.Chart(ch_cm)
-        .mark_bar(color="#1f77b4")
-        .encode(
-            x=alt.X("CV率(%):Q", title="CV率（%）"),
-            y=alt.Y("CHANNEL:N", title="放送局", sort="-x"),
-            tooltip=["CHANNEL",
-                      alt.Tooltip("CM接触数:Q", format=","),
-                      alt.Tooltip("CV数:Q", format=","),
-                      alt.Tooltip("CV率(%):Q", format=".2f")],
+    col_pgm1, col_pgm2 = st.columns([1, 1])
+
+    with col_pgm1:
+        chart_pgm = (
+            alt.Chart(pgm_data.reset_index())
+            .mark_bar(color="#2ca02c")
+            .encode(
+                x=alt.X("CV率(%):Q", title="CV率（%）"),
+                y=alt.Y("PROGRAM_NAME:N", title="番組名", sort="-x"),
+                tooltip=["PROGRAM_NAME",
+                          alt.Tooltip("CM接触数:Q", format=","),
+                          alt.Tooltip("CV数:Q", format=","),
+                          alt.Tooltip("CV率(%):Q", format=".2f")],
+            )
         )
-    )
-    st.altair_chart(chart_ch_cv, use_container_width=True)
+        st.altair_chart(chart_pgm, use_container_width=True)
 
-# --- クリエイティブドリル ---
-with col_cm2:
-    st.subheader("クリエイティブドリル（素材別CV率）")
-    cr_cm = df_cm_cv_f[df_cm_cv_f["CREATIVE_NAME"].notna()].groupby("CREATIVE_NAME").agg(
-        CM接触数=("VIEWING_ID", "count"),
-        CV数=("CONVERSION_FLAG", "sum"),
+    with col_pgm2:
+        st.dataframe(
+            pgm_data.rename(columns={
+                "PROGRAM_NAME": "番組名", "CM接触数": "CM接触数", "CV数": "CV数"
+            })[["番組名", "CM接触数", "CV数", "CV率(%)"]],
+            use_container_width=True,
+        )
+
+    # --- リーセンシー（CM接触→CV日数分布） ---
+    st.subheader("リーセンシー（CM接触からCVまでの日数分布）")
+
+    df_recency = df_cm_cv_f[
+        (df_cm_cv_f["CONVERSION_FLAG"] == True) &
+        (df_cm_cv_f["DAYS_TO_CV"].notna()) &
+        (df_cm_cv_f["DAYS_TO_CV"] >= 0) &
+        (df_cm_cv_f["DAYS_TO_CV"] <= 30)
+    ].copy()
+
+    recency_data = df_recency.groupby("DAYS_TO_CV").agg(
+        CV件数=("VIEWING_ID", "count")
     ).reset_index()
-    cr_cm["CV率(%)"] = (cr_cm["CV数"] / cr_cm["CM接触数"] * 100).round(2)
+    recency_data.rename(columns={"DAYS_TO_CV": "経過日数"}, inplace=True)
 
-    chart_cr_cv = (
-        alt.Chart(cr_cm)
-        .mark_bar(color="#ff7f0e")
+    chart_recency = (
+        alt.Chart(recency_data)
+        .mark_area(color="#9467bd", opacity=0.7, line=True)
         .encode(
-            x=alt.X("CV率(%):Q", title="CV率（%）"),
-            y=alt.Y("CREATIVE_NAME:N", title="CM素材", sort="-x"),
-            tooltip=["CREATIVE_NAME",
-                      alt.Tooltip("CM接触数:Q", format=","),
-                      alt.Tooltip("CV数:Q", format=","),
-                      alt.Tooltip("CV率(%):Q", format=".2f")],
+            x=alt.X("経過日数:Q", title="CM接触からCVまでの経過日数",
+                    scale=alt.Scale(domain=[0, 30])),
+            y=alt.Y("CV件数:Q", title="CV件数"),
+            tooltip=[alt.Tooltip("経過日数:Q"), alt.Tooltip("CV件数:Q", format=",")],
         )
+        .properties(height=300)
     )
-    st.altair_chart(chart_cr_cv, use_container_width=True)
+    st.altair_chart(chart_recency, use_container_width=True)
 
-# --- レスポンスヒートマップ ---
-st.subheader("レスポンスヒートマップ（曜日×時間帯別CV数）")
 
-hm_channel = st.selectbox("放送局で絞り込み", ["全局"] + sorted(df_cm_cv_f["CHANNEL"].unique().tolist()), key="hm_ch")
-df_hm = df_cm_cv_f[df_cm_cv_f["CONVERSION_FLAG"] == True].copy()
-if hm_channel != "全局":
-    df_hm = df_hm[df_hm["CHANNEL"] == hm_channel]
+    # =====================================================
+    # 3. 態度変容ファネル分析
+    # =====================================================
+    st.header("態度変容ファネル分析")
 
-dow_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-dow_label = {"Mon": "月", "Tue": "火", "Wed": "水", "Thu": "木", "Fri": "金", "Sat": "土", "Sun": "日"}
-df_hm["曜日"] = df_hm["CM_DOW"].map(dow_label)
+    col_att1, col_att2 = st.columns(2)
 
-hm_data = df_hm.groupby(["曜日", "CM_HOUR"]).agg(
-    CV数=("VIEWING_ID", "count")
-).reset_index()
-hm_data.rename(columns={"CM_HOUR": "時間帯"}, inplace=True)
+    with col_att1:
+        st.subheader("CM接触者 vs 非接触者 リフト比較")
+        exposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == True]
+        unexposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == False]
 
-dow_jp_order = ["月", "火", "水", "木", "金", "土", "日"]
+        lift_data = pd.DataFrame({
+            "ステージ": ["認知", "興味", "検討", "購入意向"],
+            "CM接触者リフト": [
+                (exposed["AWARENESS_AFTER"] - exposed["AWARENESS_BEFORE"]).mean() if len(exposed) > 0 else 0,
+                (exposed["INTEREST_AFTER"] - exposed["INTEREST_BEFORE"]).mean() if len(exposed) > 0 else 0,
+                (exposed["CONSIDER_AFTER"] - exposed["CONSIDER_BEFORE"]).mean() if len(exposed) > 0 else 0,
+                (exposed["PURCHASE_AFTER"] - exposed["PURCHASE_BEFORE"]).mean() if len(exposed) > 0 else 0,
+            ],
+            "非接触者リフト": [
+                (unexposed["AWARENESS_AFTER"] - unexposed["AWARENESS_BEFORE"]).mean() if len(unexposed) > 0 else 0,
+                (unexposed["INTEREST_AFTER"] - unexposed["INTEREST_BEFORE"]).mean() if len(unexposed) > 0 else 0,
+                (unexposed["CONSIDER_AFTER"] - unexposed["CONSIDER_BEFORE"]).mean() if len(unexposed) > 0 else 0,
+                (unexposed["PURCHASE_AFTER"] - unexposed["PURCHASE_BEFORE"]).mean() if len(unexposed) > 0 else 0,
+            ],
+        })
 
-chart_hm = (
-    alt.Chart(hm_data)
-    .mark_rect()
-    .encode(
-        x=alt.X("曜日:N", title="曜日", sort=dow_jp_order),
-        y=alt.Y("時間帯:O", title="時間帯", sort=list(range(24))),
-        color=alt.Color("CV数:Q", title="CV数",
-                        scale=alt.Scale(scheme="blues")),
-        tooltip=["曜日", alt.Tooltip("時間帯:O"), alt.Tooltip("CV数:Q", format=",")],
-    )
-    .properties(height=400)
-)
-st.altair_chart(chart_hm, use_container_width=True)
+        lift_long = lift_data.melt(id_vars=["ステージ"], var_name="グループ", value_name="リフト（pt）")
+        stage_order = ["認知", "興味", "検討", "購入意向"]
 
-# --- レスポンス番組ランキング ---
-st.subheader("レスポンス番組ランキング")
-
-pgm_data = df_cm_cv_f.groupby("PROGRAM_NAME").agg(
-    CM接触数=("VIEWING_ID", "count"),
-    CV数=("CONVERSION_FLAG", "sum"),
-).reset_index()
-pgm_data["CV率(%)"] = (pgm_data["CV数"] / pgm_data["CM接触数"] * 100).round(2)
-pgm_data = pgm_data.sort_values("CV率(%)", ascending=False).reset_index(drop=True)
-pgm_data.index = pgm_data.index + 1
-pgm_data.index.name = "順位"
-
-col_pgm1, col_pgm2 = st.columns([1, 1])
-
-with col_pgm1:
-    chart_pgm = (
-        alt.Chart(pgm_data.reset_index())
-        .mark_bar(color="#2ca02c")
-        .encode(
-            x=alt.X("CV率(%):Q", title="CV率（%）"),
-            y=alt.Y("PROGRAM_NAME:N", title="番組名", sort="-x"),
-            tooltip=["PROGRAM_NAME",
-                      alt.Tooltip("CM接触数:Q", format=","),
-                      alt.Tooltip("CV数:Q", format=","),
-                      alt.Tooltip("CV率(%):Q", format=".2f")],
+        chart_lift = (
+            alt.Chart(lift_long)
+            .mark_bar()
+            .encode(
+                x=alt.X("グループ:N", title=""),
+                y=alt.Y("リフト（pt）:Q", title="平均リフト（ポイント）"),
+                color=alt.Color("グループ:N", scale=alt.Scale(
+                    domain=["CM接触者リフト", "非接触者リフト"],
+                    range=["#2ca02c", "#d62728"]
+                )),
+                column=alt.Column("ステージ:N", title="ステージ", sort=stage_order),
+                tooltip=["ステージ", "グループ", alt.Tooltip("リフト（pt）:Q", format=".2f")],
+            )
+            .properties(width=100)
         )
-    )
-    st.altair_chart(chart_pgm, use_container_width=True)
+        st.altair_chart(chart_lift, use_container_width=True)
 
-with col_pgm2:
+    with col_att2:
+        st.subheader("キャンペーン別 認知リフト")
+        att_by_camp = df_attitude_f.merge(
+            df_campaigns[["CAMPAIGN_ID", "CAMPAIGN_NAME"]], on="CAMPAIGN_ID", how="left"
+        )
+        camp_lift = att_by_camp.groupby("CAMPAIGN_NAME").apply(
+            lambda x: pd.Series({
+                "認知リフト": (x["AWARENESS_AFTER"] - x["AWARENESS_BEFORE"]).mean(),
+                "購入リフト": (x["PURCHASE_AFTER"] - x["PURCHASE_BEFORE"]).mean(),
+                "回答数": len(x),
+            })
+        ).reset_index()
+
+        chart_camp_lift = (
+            alt.Chart(camp_lift)
+            .mark_bar(color="#1f77b4")
+            .encode(
+                x=alt.X("認知リフト:Q", title="平均認知リフト（pt）"),
+                y=alt.Y("CAMPAIGN_NAME:N", title="キャンペーン", sort="-x"),
+                tooltip=["CAMPAIGN_NAME", alt.Tooltip("認知リフト:Q", format=".2f"),
+                          alt.Tooltip("購入リフト:Q", format=".2f"), alt.Tooltip("回答数:Q", format=",")],
+            )
+        )
+        st.altair_chart(chart_camp_lift, use_container_width=True)
+
+
+    # =====================================================
+    # 4. サイト来訪分析
+    # =====================================================
+    st.header("サイト来訪分析")
+
+    col_s1, col_s2 = st.columns(2)
+
+    with col_s1:
+        st.subheader("流入経路別セッション数・CVR")
+        ref_data = df_site_f.groupby("REFERRER_TYPE").agg(
+            SESSIONS=("SESSION_ID", "count"),
+            CVS=("CONVERSION_FLAG", "sum"),
+            AVG_PV=("PAGE_VIEWS", "mean"),
+        ).reset_index()
+        ref_data["CVR(%)"] = (ref_data["CVS"] / ref_data["SESSIONS"] * 100).round(1)
+        ref_data["AVG_PV"] = ref_data["AVG_PV"].round(1)
+
+        chart_ref = (
+            alt.Chart(ref_data)
+            .mark_bar(color="#1f77b4")
+            .encode(
+                x=alt.X("SESSIONS:Q", title="セッション数"),
+                y=alt.Y("REFERRER_TYPE:N", title="流入経路", sort="-x"),
+                tooltip=["REFERRER_TYPE", alt.Tooltip("SESSIONS:Q", format=","),
+                          alt.Tooltip("CVR(%):Q", format=".1f"), alt.Tooltip("AVG_PV:Q", format=".1f")],
+            )
+        )
+        st.altair_chart(chart_ref, use_container_width=True)
+
+    with col_s2:
+        st.subheader("月別セッション数・CV推移")
+        df_site_f_copy = df_site_f.copy()
+        df_site_f_copy["MONTH"] = pd.to_datetime(df_site_f_copy["VISIT_DATE"]).dt.to_period("M").astype(str)
+        monthly_site = df_site_f_copy.groupby("MONTH").agg(
+            SESSIONS=("SESSION_ID", "count"),
+            CVS=("CONVERSION_FLAG", "sum"),
+        ).reset_index()
+
+        base = alt.Chart(monthly_site).encode(x=alt.X("MONTH:N", title="月"))
+        bar = base.mark_bar(color="#1f77b4", opacity=0.6).encode(
+            y=alt.Y("SESSIONS:Q", title="セッション数"),
+            tooltip=["MONTH", alt.Tooltip("SESSIONS:Q", format=",")],
+        )
+        line = base.mark_line(color="#d62728", strokeWidth=2, point=True).encode(
+            y=alt.Y("CVS:Q", title="CV数"),
+            tooltip=["MONTH", alt.Tooltip("CVS:Q", format=",")],
+        )
+        chart_monthly = alt.layer(bar, line).resolve_scale(y="independent")
+        st.altair_chart(chart_monthly, use_container_width=True)
+
+
+    # =====================================================
+    # 5. オフライン購買分析
+    # =====================================================
+    st.header("オフライン購買分析")
+
+    col_p1, col_p2 = st.columns(2)
+
+    with col_p1:
+        st.subheader("商品カテゴリ別購買額")
+        cat_data = df_purchase_f.groupby("PRODUCT_CATEGORY").agg(
+            TOTAL_AMOUNT=("AMOUNT", "sum"),
+            COUNT=("PURCHASE_ID", "count"),
+        ).reset_index()
+        cat_data["AVG_AMOUNT"] = (cat_data["TOTAL_AMOUNT"] / cat_data["COUNT"]).round(0)
+
+        chart_cat = (
+            alt.Chart(cat_data)
+            .mark_bar(color="#2ca02c")
+            .encode(
+                x=alt.X("TOTAL_AMOUNT:Q", title="購買総額（円）"),
+                y=alt.Y("PRODUCT_CATEGORY:N", title="カテゴリ", sort="-x"),
+                tooltip=["PRODUCT_CATEGORY", alt.Tooltip("TOTAL_AMOUNT:Q", format=","),
+                          alt.Tooltip("COUNT:Q", format=","), alt.Tooltip("AVG_AMOUNT:Q", format=",")],
+            )
+        )
+        st.altair_chart(chart_cat, use_container_width=True)
+
+    with col_p2:
+        st.subheader("CM接触者 vs 非接触者 購買比較")
+        cm_purchase = df_purchase_f.groupby("CM_EXPOSED").agg(
+            AVG_AMOUNT=("AMOUNT", "mean"),
+            COUNT=("PURCHASE_ID", "count"),
+            TOTAL=("AMOUNT", "sum"),
+        ).reset_index()
+        cm_purchase["グループ"] = cm_purchase["CM_EXPOSED"].map({True: "CM接触者", False: "非接触者"})
+        cm_purchase["AVG_AMOUNT"] = cm_purchase["AVG_AMOUNT"].round(0)
+
+        chart_cm_purchase = (
+            alt.Chart(cm_purchase)
+            .mark_bar()
+            .encode(
+                x=alt.X("グループ:N", title=""),
+                y=alt.Y("AVG_AMOUNT:Q", title="平均購買金額（円）"),
+                color=alt.Color("グループ:N", scale=alt.Scale(
+                    domain=["CM接触者", "非接触者"],
+                    range=["#2ca02c", "#d62728"]
+                )),
+                tooltip=["グループ", alt.Tooltip("AVG_AMOUNT:Q", format=","),
+                          alt.Tooltip("COUNT:Q", format=","), alt.Tooltip("TOTAL:Q", format=",")],
+            )
+        )
+        st.altair_chart(chart_cm_purchase, use_container_width=True)
+
+
+    # =====================================================
+    # 6. 来店・アプリ分析
+    # =====================================================
+    st.header("来店・アプリ分析")
+
+    col_a1, col_a2 = st.columns(2)
+
+    with col_a1:
+        st.subheader("店舗別来店件数")
+        store_data = df_store_f.groupby("STORE_NAME").agg(
+            VISITS=("VISIT_ID", "count"),
+            AVG_STAY=("STAY_MINUTES", "mean"),
+        ).reset_index()
+        store_data["AVG_STAY"] = store_data["AVG_STAY"].round(1)
+
+        chart_store = (
+            alt.Chart(store_data)
+            .mark_bar(color="#9467bd")
+            .encode(
+                x=alt.X("VISITS:Q", title="来店件数"),
+                y=alt.Y("STORE_NAME:N", title="店舗", sort="-x"),
+                tooltip=["STORE_NAME", alt.Tooltip("VISITS:Q", format=","),
+                          alt.Tooltip("AVG_STAY:Q", format=".1f")],
+            )
+        )
+        st.altair_chart(chart_store, use_container_width=True)
+
+    with col_a2:
+        st.subheader("アプリ別DL数・起動数")
+        dl_by_app = df_app_dl_f.groupby("APP_NAME").agg(DL=("DOWNLOAD_ID", "count")).reset_index()
+        launch_by_app = df_app_launch_f.groupby("APP_NAME").agg(LAUNCH=("LAUNCH_ID", "count")).reset_index()
+        app_data = dl_by_app.merge(launch_by_app, on="APP_NAME", how="outer").fillna(0)
+        app_data["LAUNCH"] = app_data["LAUNCH"].astype(int)
+        app_data["DL"] = app_data["DL"].astype(int)
+
+        app_long = app_data.melt(id_vars=["APP_NAME"], var_name="指標", value_name="件数")
+
+        chart_app = (
+            alt.Chart(app_long)
+            .mark_bar()
+            .encode(
+                x=alt.X("指標:N", title=""),
+                y=alt.Y("件数:Q", title="件数"),
+                color=alt.Color("指標:N", scale=alt.Scale(
+                    domain=["DL", "LAUNCH"],
+                    range=["#1f77b4", "#ff7f0e"]
+                )),
+                column=alt.Column("APP_NAME:N", title="アプリ"),
+                tooltip=["APP_NAME", "指標", alt.Tooltip("件数:Q", format=",")],
+            )
+            .properties(width=100)
+        )
+        st.altair_chart(chart_app, use_container_width=True)
+
+    # アプリDLチャネル分析
+    st.subheader("アプリDL 広告チャネル別")
+    col_ch1, col_ch2 = st.columns(2)
+
+    with col_ch1:
+        channel_data = df_app_dl_f.groupby("AD_CHANNEL").agg(
+            DL=("DOWNLOAD_ID", "count")
+        ).reset_index()
+        chart_channel = (
+            alt.Chart(channel_data)
+            .mark_arc(innerRadius=50)
+            .encode(
+                theta=alt.Theta("DL:Q"),
+                color=alt.Color("AD_CHANNEL:N", title="チャネル"),
+                tooltip=["AD_CHANNEL", alt.Tooltip("DL:Q", format=",")],
+            )
+        )
+        st.altair_chart(chart_channel, use_container_width=True)
+
+    with col_ch2:
+        os_data = df_app_dl_f.groupby("OS_TYPE").agg(DL=("DOWNLOAD_ID", "count")).reset_index()
+        chart_os = (
+            alt.Chart(os_data)
+            .mark_arc(innerRadius=50)
+            .encode(
+                theta=alt.Theta("DL:Q"),
+                color=alt.Color("OS_TYPE:N", title="OS",
+                                scale=alt.Scale(domain=["iOS", "Android"], range=["#636363", "#2ca02c"])),
+                tooltip=["OS_TYPE", alt.Tooltip("DL:Q", format=",")],
+            )
+        )
+        st.altair_chart(chart_os, use_container_width=True)
+
+
+    # =====================================================
+    # 7. 顧客ロイヤリティ分析
+    # =====================================================
+    st.header("顧客ロイヤリティ分析")
+
+    col_l1, col_l2 = st.columns(2)
+
+    with col_l1:
+        st.subheader("ロイヤリティセグメント分布")
+        seg_data = df_loyalty.groupby("LOYALTY_SEGMENT").agg(
+            COUNT=("CUSTOMER_ID", "count"),
+            AVG_NPS=("NPS_SCORE", "mean"),
+            AVG_LTV=("LTV_AMOUNT", "mean"),
+        ).reset_index()
+        seg_data["AVG_NPS"] = seg_data["AVG_NPS"].round(1)
+        seg_data["AVG_LTV"] = seg_data["AVG_LTV"].round(0)
+
+        chart_seg = (
+            alt.Chart(seg_data)
+            .mark_bar()
+            .encode(
+                x=alt.X("LOYALTY_SEGMENT:N", title="セグメント",
+                         sort=["プロモーター", "パッシブ", "デトラクター"]),
+                y=alt.Y("COUNT:Q", title="顧客数"),
+                color=alt.Color("LOYALTY_SEGMENT:N", scale=alt.Scale(
+                    domain=["プロモーター", "パッシブ", "デトラクター"],
+                    range=["#2ca02c", "#ff7f0e", "#d62728"]
+                ), legend=None),
+                tooltip=["LOYALTY_SEGMENT", alt.Tooltip("COUNT:Q", format=","),
+                          alt.Tooltip("AVG_NPS:Q", format=".1f"), alt.Tooltip("AVG_LTV:Q", format=",")],
+            )
+        )
+        st.altair_chart(chart_seg, use_container_width=True)
+
+    with col_l2:
+        st.subheader("年齢層 × 性別 分布")
+        age_gender = df_loyalty.groupby(["AGE_GROUP", "GENDER"]).agg(
+            COUNT=("CUSTOMER_ID", "count")
+        ).reset_index()
+        age_order = ["10代", "20代", "30代", "40代", "50代", "60代"]
+
+        chart_age = (
+            alt.Chart(age_gender)
+            .mark_bar()
+            .encode(
+                x=alt.X("GENDER:N", title=""),
+                y=alt.Y("COUNT:Q", title="顧客数"),
+                color=alt.Color("GENDER:N", title="性別", scale=alt.Scale(
+                    domain=["男性", "女性"],
+                    range=["#1f77b4", "#e377c2"]
+                )),
+                column=alt.Column("AGE_GROUP:N", title="年齢層", sort=age_order),
+                tooltip=["AGE_GROUP", "GENDER", alt.Tooltip("COUNT:Q", format=",")],
+            )
+            .properties(width=80)
+        )
+        st.altair_chart(chart_age, use_container_width=True)
+
+    # エリア別NPS
+    st.subheader("エリア別 平均NPS・平均LTV")
+    area_loyalty = df_loyalty[df_loyalty["AREA"].isin(selected_areas)].groupby("AREA").agg(
+        AVG_NPS=("NPS_SCORE", "mean"),
+        AVG_LTV=("LTV_AMOUNT", "mean"),
+        COUNT=("CUSTOMER_ID", "count"),
+    ).reset_index()
+    area_loyalty["AVG_NPS"] = area_loyalty["AVG_NPS"].round(1)
+    area_loyalty["AVG_LTV"] = area_loyalty["AVG_LTV"].round(0)
+
     st.dataframe(
-        pgm_data.rename(columns={
-            "PROGRAM_NAME": "番組名", "CM接触数": "CM接触数", "CV数": "CV数"
-        })[["番組名", "CM接触数", "CV数", "CV率(%)"]],
+        area_loyalty.rename(columns={
+            "AREA": "エリア", "AVG_NPS": "平均NPS", "AVG_LTV": "平均LTV（円）", "COUNT": "顧客数"
+        }),
         use_container_width=True,
     )
 
-# --- リーセンシー（CM接触→CV日数分布） ---
-st.subheader("リーセンシー（CM接触からCVまでの日数分布）")
-
-df_recency = df_cm_cv_f[
-    (df_cm_cv_f["CONVERSION_FLAG"] == True) &
-    (df_cm_cv_f["DAYS_TO_CV"].notna()) &
-    (df_cm_cv_f["DAYS_TO_CV"] >= 0) &
-    (df_cm_cv_f["DAYS_TO_CV"] <= 30)
-].copy()
-
-recency_data = df_recency.groupby("DAYS_TO_CV").agg(
-    CV件数=("VIEWING_ID", "count")
-).reset_index()
-recency_data.rename(columns={"DAYS_TO_CV": "経過日数"}, inplace=True)
-
-chart_recency = (
-    alt.Chart(recency_data)
-    .mark_area(color="#9467bd", opacity=0.7, line=True)
-    .encode(
-        x=alt.X("経過日数:Q", title="CM接触からCVまでの経過日数",
-                scale=alt.Scale(domain=[0, 30])),
-        y=alt.Y("CV件数:Q", title="CV件数"),
-        tooltip=[alt.Tooltip("経過日数:Q"), alt.Tooltip("CV件数:Q", format=",")],
-    )
-    .properties(height=300)
-)
-st.altair_chart(chart_recency, use_container_width=True)
-
 
 # =====================================================
-# 3. 態度変容ファネル分析
+# AI問い合わせタブ
 # =====================================================
-st.header("態度変容ファネル分析")
+with tab_ai:
+    st.header("AI問い合わせ")
+    st.caption("STADIA360のデータに基づいて、自然言語で質問できます（Snowflake Cortex COMPLETE）")
 
-col_att1, col_att2 = st.columns(2)
+    # --- データコンテキスト生成 ---
+    def build_data_context():
+        """フィルタ適用済みの各テーブルから主要指標をサマリーテキスト化"""
+        lines = []
+        lines.append("=== STADIA360 統合マーケティングデータサマリー ===")
 
-with col_att1:
-    st.subheader("CM接触者 vs 非接触者 リフト比較")
-    exposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == True]
-    unexposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == False]
+        # フィルター状態
+        lines.append(f"\n【フィルター条件】")
+        lines.append(f"- キャンペーン: {selected_campaign}")
+        lines.append(f"- エリア: {', '.join(selected_areas)}")
 
-    lift_data = pd.DataFrame({
-        "ステージ": ["認知", "興味", "検討", "購入意向"],
-        "CM接触者リフト": [
-            (exposed["AWARENESS_AFTER"] - exposed["AWARENESS_BEFORE"]).mean() if len(exposed) > 0 else 0,
-            (exposed["INTEREST_AFTER"] - exposed["INTEREST_BEFORE"]).mean() if len(exposed) > 0 else 0,
-            (exposed["CONSIDER_AFTER"] - exposed["CONSIDER_BEFORE"]).mean() if len(exposed) > 0 else 0,
-            (exposed["PURCHASE_AFTER"] - exposed["PURCHASE_BEFORE"]).mean() if len(exposed) > 0 else 0,
-        ],
-        "非接触者リフト": [
-            (unexposed["AWARENESS_AFTER"] - unexposed["AWARENESS_BEFORE"]).mean() if len(unexposed) > 0 else 0,
-            (unexposed["INTEREST_AFTER"] - unexposed["INTEREST_BEFORE"]).mean() if len(unexposed) > 0 else 0,
-            (unexposed["CONSIDER_AFTER"] - unexposed["CONSIDER_BEFORE"]).mean() if len(unexposed) > 0 else 0,
-            (unexposed["PURCHASE_AFTER"] - unexposed["PURCHASE_BEFORE"]).mean() if len(unexposed) > 0 else 0,
-        ],
-    })
+        # キャンペーン一覧
+        lines.append(f"\n【キャンペーン一覧】({len(df_campaigns)}件)")
+        for _, r in df_campaigns.iterrows():
+            lines.append(f"- {r['CAMPAIGN_NAME']} (ID:{r['CAMPAIGN_ID']}, {r['START_DATE']}~{r['END_DATE']}, 予算:{r['BUDGET']:,.0f}円)")
 
-    lift_long = lift_data.melt(id_vars=["ステージ"], var_name="グループ", value_name="リフト（pt）")
-    stage_order = ["認知", "興味", "検討", "購入意向"]
+        # TV視聴
+        lines.append(f"\n【TV視聴データ】(フィルタ後 {len(df_tv_f):,}件)")
+        cm_cnt = df_tv_f[df_tv_f["CM_EXPOSED"] == True].shape[0]
+        lines.append(f"- CM接触件数: {cm_cnt:,} / 接触率: {(cm_cnt/len(df_tv_f)*100 if len(df_tv_f)>0 else 0):.1f}%")
+        ch_top = df_tv_f.groupby("CHANNEL").size().sort_values(ascending=False).head(5)
+        lines.append(f"- チャンネル別視聴TOP5: {', '.join(f'{k}({v:,}件)' for k,v in ch_top.items())}")
+        dev_dist = df_tv_f.groupby("DEVICE_TYPE").size()
+        lines.append(f"- デバイス別: {', '.join(f'{k}({v:,}件)' for k,v in dev_dist.items())}")
 
-    chart_lift = (
-        alt.Chart(lift_long)
-        .mark_bar()
-        .encode(
-            x=alt.X("グループ:N", title=""),
-            y=alt.Y("リフト（pt）:Q", title="平均リフト（ポイント）"),
-            color=alt.Color("グループ:N", scale=alt.Scale(
-                domain=["CM接触者リフト", "非接触者リフト"],
-                range=["#2ca02c", "#d62728"]
-            )),
-            column=alt.Column("ステージ:N", title="ステージ", sort=stage_order),
-            tooltip=["ステージ", "グループ", alt.Tooltip("リフト（pt）:Q", format=".2f")],
-        )
-        .properties(width=100)
-    )
-    st.altair_chart(chart_lift, use_container_width=True)
+        # CM効果(CM→CV)
+        if len(df_cm_cv_f) > 0:
+            cv_flag = pd.to_numeric(df_cm_cv_f["CONVERSION_FLAG"], errors="coerce").fillna(0).astype(int)
+            cv_total = cv_flag.sum()
+            cv_rate = (cv_total / len(df_cm_cv_f) * 100)
+            lines.append(f"\n【CM効果分析】(CM接触者 {len(df_cm_cv_f):,}件)")
+            lines.append(f"- CM接触者CV数: {cv_total:,} / CV率: {cv_rate:.2f}%")
+            ch_cv = df_cm_cv_f.copy()
+            ch_cv["CV"] = cv_flag
+            ch_grp = ch_cv.groupby("CHANNEL").agg(接触数=("VIEWING_ID","count"), CV数=("CV","sum")).reset_index()
+            ch_grp["CV率"] = (ch_grp["CV数"]/ch_grp["接触数"]*100).round(2)
+            for _, r in ch_grp.sort_values("CV率", ascending=False).iterrows():
+                lines.append(f"  - {r['CHANNEL']}: 接触{r['接触数']:,}件, CV{r['CV数']:,}件, CV率{r['CV率']:.2f}%")
 
-with col_att2:
-    st.subheader("キャンペーン別 認知リフト")
-    att_by_camp = df_attitude_f.merge(
-        df_campaigns[["CAMPAIGN_ID", "CAMPAIGN_NAME"]], on="CAMPAIGN_ID", how="left"
-    )
-    camp_lift = att_by_camp.groupby("CAMPAIGN_NAME").apply(
-        lambda x: pd.Series({
-            "認知リフト": (x["AWARENESS_AFTER"] - x["AWARENESS_BEFORE"]).mean(),
-            "購入リフト": (x["PURCHASE_AFTER"] - x["PURCHASE_BEFORE"]).mean(),
-            "回答数": len(x),
-        })
-    ).reset_index()
+        # 態度変容
+        if len(df_attitude_f) > 0:
+            exp = df_attitude_f[df_attitude_f["CM_EXPOSED"] == True]
+            unexp = df_attitude_f[df_attitude_f["CM_EXPOSED"] == False]
+            lines.append(f"\n【態度変容】(フィルタ後 {len(df_attitude_f):,}件)")
+            if len(exp) > 0:
+                aw_lift = (exp["AWARENESS_AFTER"] - exp["AWARENESS_BEFORE"]).mean()
+                pu_lift = (exp["PURCHASE_AFTER"] - exp["PURCHASE_BEFORE"]).mean()
+                lines.append(f"- CM接触者: 認知リフト{aw_lift:.2f}pt, 購入意向リフト{pu_lift:.2f}pt")
+            if len(unexp) > 0:
+                aw_lift_u = (unexp["AWARENESS_AFTER"] - unexp["AWARENESS_BEFORE"]).mean()
+                pu_lift_u = (unexp["PURCHASE_AFTER"] - unexp["PURCHASE_BEFORE"]).mean()
+                lines.append(f"- 非接触者: 認知リフト{aw_lift_u:.2f}pt, 購入意向リフト{pu_lift_u:.2f}pt")
 
-    chart_camp_lift = (
-        alt.Chart(camp_lift)
-        .mark_bar(color="#1f77b4")
-        .encode(
-            x=alt.X("認知リフト:Q", title="平均認知リフト（pt）"),
-            y=alt.Y("CAMPAIGN_NAME:N", title="キャンペーン", sort="-x"),
-            tooltip=["CAMPAIGN_NAME", alt.Tooltip("認知リフト:Q", format=".2f"),
-                      alt.Tooltip("購入リフト:Q", format=".2f"), alt.Tooltip("回答数:Q", format=",")],
-        )
-    )
-    st.altair_chart(chart_camp_lift, use_container_width=True)
+        # サイト来訪
+        if len(df_site_f) > 0:
+            site_cv = df_site_f[df_site_f["CONVERSION_FLAG"] == True].shape[0]
+            site_cvr = (site_cv / len(df_site_f) * 100)
+            lines.append(f"\n【サイト来訪】(フィルタ後 {len(df_site_f):,}件)")
+            lines.append(f"- CV数: {site_cv:,} / CVR: {site_cvr:.1f}%")
+            lines.append(f"- 合計PV: {df_site_f['PAGE_VIEWS'].sum():,}")
+            ref_top = df_site_f.groupby("REFERRER_TYPE").size().sort_values(ascending=False)
+            lines.append(f"- 流入経路: {', '.join(f'{k}({v:,}件)' for k,v in ref_top.items())}")
 
+        # オフライン購買
+        if len(df_purchase_f) > 0:
+            lines.append(f"\n【オフライン購買】(フィルタ後 {len(df_purchase_f):,}件)")
+            lines.append(f"- 購買総額: ¥{df_purchase_f['AMOUNT'].sum():,.0f}")
+            lines.append(f"- 平均購買額: ¥{df_purchase_f['AMOUNT'].mean():,.0f}")
+            cat_top = df_purchase_f.groupby("PRODUCT_CATEGORY")["AMOUNT"].sum().sort_values(ascending=False)
+            lines.append(f"- カテゴリ別: {', '.join(f'{k}(¥{v:,.0f})' for k,v in cat_top.items())}")
+            cm_exp_avg = df_purchase_f[df_purchase_f["CM_EXPOSED"]==True]["AMOUNT"].mean()
+            cm_unexp_avg = df_purchase_f[df_purchase_f["CM_EXPOSED"]==False]["AMOUNT"].mean()
+            lines.append(f"- CM接触者平均: ¥{cm_exp_avg:,.0f} / 非接触者平均: ¥{cm_unexp_avg:,.0f}")
 
-# =====================================================
-# 4. サイト来訪分析
-# =====================================================
-st.header("サイト来訪分析")
+        # 来店
+        if len(df_store_f) > 0:
+            lines.append(f"\n【来店】(フィルタ後 {len(df_store_f):,}件)")
+            lines.append(f"- 平均滞在: {df_store_f['STAY_MINUTES'].mean():.0f}分")
 
-col_s1, col_s2 = st.columns(2)
+        # アプリ
+        lines.append(f"\n【アプリ】DL:{len(df_app_dl_f):,}件 / 起動:{len(df_app_launch_f):,}件")
 
-with col_s1:
-    st.subheader("流入経路別セッション数・CVR")
-    ref_data = df_site_f.groupby("REFERRER_TYPE").agg(
-        SESSIONS=("SESSION_ID", "count"),
-        CVS=("CONVERSION_FLAG", "sum"),
-        AVG_PV=("PAGE_VIEWS", "mean"),
-    ).reset_index()
-    ref_data["CVR(%)"] = (ref_data["CVS"] / ref_data["SESSIONS"] * 100).round(1)
-    ref_data["AVG_PV"] = ref_data["AVG_PV"].round(1)
+        # 顧客ロイヤリティ
+        lines.append(f"\n【顧客ロイヤリティ】({len(df_loyalty):,}人)")
+        lines.append(f"- 平均NPS: {df_loyalty['NPS_SCORE'].mean():.1f}")
+        lines.append(f"- 平均LTV: ¥{df_loyalty['LTV_AMOUNT'].mean():,.0f}")
+        seg_dist = df_loyalty.groupby("LOYALTY_SEGMENT").size()
+        lines.append(f"- セグメント: {', '.join(f'{k}({v:,}人)' for k,v in seg_dist.items())}")
 
-    chart_ref = (
-        alt.Chart(ref_data)
-        .mark_bar(color="#1f77b4")
-        .encode(
-            x=alt.X("SESSIONS:Q", title="セッション数"),
-            y=alt.Y("REFERRER_TYPE:N", title="流入経路", sort="-x"),
-            tooltip=["REFERRER_TYPE", alt.Tooltip("SESSIONS:Q", format=","),
-                      alt.Tooltip("CVR(%):Q", format=".1f"), alt.Tooltip("AVG_PV:Q", format=".1f")],
-        )
-    )
-    st.altair_chart(chart_ref, use_container_width=True)
+        return "\n".join(lines)
 
-with col_s2:
-    st.subheader("月別セッション数・CV推移")
-    df_site_f_copy = df_site_f.copy()
-    df_site_f_copy["MONTH"] = pd.to_datetime(df_site_f_copy["VISIT_DATE"]).dt.to_period("M").astype(str)
-    monthly_site = df_site_f_copy.groupby("MONTH").agg(
-        SESSIONS=("SESSION_ID", "count"),
-        CVS=("CONVERSION_FLAG", "sum"),
-    ).reset_index()
+    # --- チャット履歴管理 ---
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-    base = alt.Chart(monthly_site).encode(x=alt.X("MONTH:N", title="月"))
-    bar = base.mark_bar(color="#1f77b4", opacity=0.6).encode(
-        y=alt.Y("SESSIONS:Q", title="セッション数"),
-        tooltip=["MONTH", alt.Tooltip("SESSIONS:Q", format=",")],
-    )
-    line = base.mark_line(color="#d62728", strokeWidth=2, point=True).encode(
-        y=alt.Y("CVS:Q", title="CV数"),
-        tooltip=["MONTH", alt.Tooltip("CVS:Q", format=",")],
-    )
-    chart_monthly = alt.layer(bar, line).resolve_scale(y="independent")
-    st.altair_chart(chart_monthly, use_container_width=True)
+    # --- サンプル質問 ---
+    st.markdown("**質問例:**")
+    sample_cols = st.columns(3)
+    sample_questions = [
+        "CM接触者と非接触者の購買金額の差を教えて",
+        "最もCV率が高い放送局とその理由を分析して",
+        "キャンペーン全体の効果をサマリーして",
+    ]
+    for i, q in enumerate(sample_questions):
+        with sample_cols[i]:
+            if st.button(q, key=f"sample_{i}"):
+                st.session_state.messages.append({"role": "user", "content": q})
 
+    st.markdown("---")
 
-# =====================================================
-# 5. オフライン購買分析
-# =====================================================
-st.header("オフライン購買分析")
+    # --- チャット履歴表示 ---
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-col_p1, col_p2 = st.columns(2)
+    # --- ユーザー入力 ---
+    if user_input := st.chat_input("データについて質問してください..."):
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
 
-with col_p1:
-    st.subheader("商品カテゴリ別購買額")
-    cat_data = df_purchase_f.groupby("PRODUCT_CATEGORY").agg(
-        TOTAL_AMOUNT=("AMOUNT", "sum"),
-        COUNT=("PURCHASE_ID", "count"),
-    ).reset_index()
-    cat_data["AVG_AMOUNT"] = (cat_data["TOTAL_AMOUNT"] / cat_data["COUNT"]).round(0)
+    # --- LLM応答生成 ---
+    if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+        with st.chat_message("assistant"):
+            with st.spinner("分析中..."):
+                data_context = build_data_context()
+                user_question = st.session_state.messages[-1]["content"]
 
-    chart_cat = (
-        alt.Chart(cat_data)
-        .mark_bar(color="#2ca02c")
-        .encode(
-            x=alt.X("TOTAL_AMOUNT:Q", title="購買総額（円）"),
-            y=alt.Y("PRODUCT_CATEGORY:N", title="カテゴリ", sort="-x"),
-            tooltip=["PRODUCT_CATEGORY", alt.Tooltip("TOTAL_AMOUNT:Q", format=","),
-                      alt.Tooltip("COUNT:Q", format=","), alt.Tooltip("AVG_AMOUNT:Q", format=",")],
-        )
-    )
-    st.altair_chart(chart_cat, use_container_width=True)
+                system_prompt = f"""あなたはSTADIA360統合マーケティングプラットフォームのデータアナリストです。
+以下のデータサマリーに基づいて、ユーザーの質問に日本語で丁寧に回答してください。
+具体的な数値を引用し、マーケティング施策への示唆を含めてください。
 
-with col_p2:
-    st.subheader("CM接触者 vs 非接触者 購買比較")
-    cm_purchase = df_purchase_f.groupby("CM_EXPOSED").agg(
-        AVG_AMOUNT=("AMOUNT", "mean"),
-        COUNT=("PURCHASE_ID", "count"),
-        TOTAL=("AMOUNT", "sum"),
-    ).reset_index()
-    cm_purchase["グループ"] = cm_purchase["CM_EXPOSED"].map({True: "CM接触者", False: "非接触者"})
-    cm_purchase["AVG_AMOUNT"] = cm_purchase["AVG_AMOUNT"].round(0)
+{data_context}"""
 
-    chart_cm_purchase = (
-        alt.Chart(cm_purchase)
-        .mark_bar()
-        .encode(
-            x=alt.X("グループ:N", title=""),
-            y=alt.Y("AVG_AMOUNT:Q", title="平均購買金額（円）"),
-            color=alt.Color("グループ:N", scale=alt.Scale(
-                domain=["CM接触者", "非接触者"],
-                range=["#2ca02c", "#d62728"]
-            )),
-            tooltip=["グループ", alt.Tooltip("AVG_AMOUNT:Q", format=","),
-                      alt.Tooltip("COUNT:Q", format=","), alt.Tooltip("TOTAL:Q", format=",")],
-        )
-    )
-    st.altair_chart(chart_cm_purchase, use_container_width=True)
+                # エスケープ処理（SQLインジェクション防止）
+                escaped_system = system_prompt.replace("'", "''").replace("\\", "\\\\")
+                escaped_question = user_question.replace("'", "''").replace("\\", "\\\\")
 
+                prompt_for_complete = f"{escaped_system}\n\nユーザーの質問: {escaped_question}"
 
-# =====================================================
-# 6. 来店・アプリ分析
-# =====================================================
-st.header("来店・アプリ分析")
+                try:
+                    result = session.sql(
+                        f"SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', '{prompt_for_complete}') AS RESPONSE"
+                    ).collect()
+                    response_text = result[0]["RESPONSE"]
+                except Exception as e:
+                    response_text = f"エラーが発生しました: {str(e)}"
 
-col_a1, col_a2 = st.columns(2)
-
-with col_a1:
-    st.subheader("店舗別来店件数")
-    store_data = df_store_f.groupby("STORE_NAME").agg(
-        VISITS=("VISIT_ID", "count"),
-        AVG_STAY=("STAY_MINUTES", "mean"),
-    ).reset_index()
-    store_data["AVG_STAY"] = store_data["AVG_STAY"].round(1)
-
-    chart_store = (
-        alt.Chart(store_data)
-        .mark_bar(color="#9467bd")
-        .encode(
-            x=alt.X("VISITS:Q", title="来店件数"),
-            y=alt.Y("STORE_NAME:N", title="店舗", sort="-x"),
-            tooltip=["STORE_NAME", alt.Tooltip("VISITS:Q", format=","),
-                      alt.Tooltip("AVG_STAY:Q", format=".1f")],
-        )
-    )
-    st.altair_chart(chart_store, use_container_width=True)
-
-with col_a2:
-    st.subheader("アプリ別DL数・起動数")
-    dl_by_app = df_app_dl_f.groupby("APP_NAME").agg(DL=("DOWNLOAD_ID", "count")).reset_index()
-    launch_by_app = df_app_launch_f.groupby("APP_NAME").agg(LAUNCH=("LAUNCH_ID", "count")).reset_index()
-    app_data = dl_by_app.merge(launch_by_app, on="APP_NAME", how="outer").fillna(0)
-    app_data["LAUNCH"] = app_data["LAUNCH"].astype(int)
-    app_data["DL"] = app_data["DL"].astype(int)
-
-    app_long = app_data.melt(id_vars=["APP_NAME"], var_name="指標", value_name="件数")
-
-    chart_app = (
-        alt.Chart(app_long)
-        .mark_bar()
-        .encode(
-            x=alt.X("指標:N", title=""),
-            y=alt.Y("件数:Q", title="件数"),
-            color=alt.Color("指標:N", scale=alt.Scale(
-                domain=["DL", "LAUNCH"],
-                range=["#1f77b4", "#ff7f0e"]
-            )),
-            column=alt.Column("APP_NAME:N", title="アプリ"),
-            tooltip=["APP_NAME", "指標", alt.Tooltip("件数:Q", format=",")],
-        )
-        .properties(width=100)
-    )
-    st.altair_chart(chart_app, use_container_width=True)
-
-# アプリDLチャネル分析
-st.subheader("アプリDL 広告チャネル別")
-col_ch1, col_ch2 = st.columns(2)
-
-with col_ch1:
-    channel_data = df_app_dl_f.groupby("AD_CHANNEL").agg(
-        DL=("DOWNLOAD_ID", "count")
-    ).reset_index()
-    chart_channel = (
-        alt.Chart(channel_data)
-        .mark_arc(innerRadius=50)
-        .encode(
-            theta=alt.Theta("DL:Q"),
-            color=alt.Color("AD_CHANNEL:N", title="チャネル"),
-            tooltip=["AD_CHANNEL", alt.Tooltip("DL:Q", format=",")],
-        )
-    )
-    st.altair_chart(chart_channel, use_container_width=True)
-
-with col_ch2:
-    os_data = df_app_dl_f.groupby("OS_TYPE").agg(DL=("DOWNLOAD_ID", "count")).reset_index()
-    chart_os = (
-        alt.Chart(os_data)
-        .mark_arc(innerRadius=50)
-        .encode(
-            theta=alt.Theta("DL:Q"),
-            color=alt.Color("OS_TYPE:N", title="OS",
-                            scale=alt.Scale(domain=["iOS", "Android"], range=["#636363", "#2ca02c"])),
-            tooltip=["OS_TYPE", alt.Tooltip("DL:Q", format=",")],
-        )
-    )
-    st.altair_chart(chart_os, use_container_width=True)
-
-
-# =====================================================
-# 7. 顧客ロイヤリティ分析
-# =====================================================
-st.header("顧客ロイヤリティ分析")
-
-col_l1, col_l2 = st.columns(2)
-
-with col_l1:
-    st.subheader("ロイヤリティセグメント分布")
-    seg_data = df_loyalty.groupby("LOYALTY_SEGMENT").agg(
-        COUNT=("CUSTOMER_ID", "count"),
-        AVG_NPS=("NPS_SCORE", "mean"),
-        AVG_LTV=("LTV_AMOUNT", "mean"),
-    ).reset_index()
-    seg_data["AVG_NPS"] = seg_data["AVG_NPS"].round(1)
-    seg_data["AVG_LTV"] = seg_data["AVG_LTV"].round(0)
-
-    chart_seg = (
-        alt.Chart(seg_data)
-        .mark_bar()
-        .encode(
-            x=alt.X("LOYALTY_SEGMENT:N", title="セグメント",
-                     sort=["プロモーター", "パッシブ", "デトラクター"]),
-            y=alt.Y("COUNT:Q", title="顧客数"),
-            color=alt.Color("LOYALTY_SEGMENT:N", scale=alt.Scale(
-                domain=["プロモーター", "パッシブ", "デトラクター"],
-                range=["#2ca02c", "#ff7f0e", "#d62728"]
-            ), legend=None),
-            tooltip=["LOYALTY_SEGMENT", alt.Tooltip("COUNT:Q", format=","),
-                      alt.Tooltip("AVG_NPS:Q", format=".1f"), alt.Tooltip("AVG_LTV:Q", format=",")],
-        )
-    )
-    st.altair_chart(chart_seg, use_container_width=True)
-
-with col_l2:
-    st.subheader("年齢層 × 性別 分布")
-    age_gender = df_loyalty.groupby(["AGE_GROUP", "GENDER"]).agg(
-        COUNT=("CUSTOMER_ID", "count")
-    ).reset_index()
-    age_order = ["10代", "20代", "30代", "40代", "50代", "60代"]
-
-    chart_age = (
-        alt.Chart(age_gender)
-        .mark_bar()
-        .encode(
-            x=alt.X("GENDER:N", title=""),
-            y=alt.Y("COUNT:Q", title="顧客数"),
-            color=alt.Color("GENDER:N", title="性別", scale=alt.Scale(
-                domain=["男性", "女性"],
-                range=["#1f77b4", "#e377c2"]
-            )),
-            column=alt.Column("AGE_GROUP:N", title="年齢層", sort=age_order),
-            tooltip=["AGE_GROUP", "GENDER", alt.Tooltip("COUNT:Q", format=",")],
-        )
-        .properties(width=80)
-    )
-    st.altair_chart(chart_age, use_container_width=True)
-
-# エリア別NPS
-st.subheader("エリア別 平均NPS・平均LTV")
-area_loyalty = df_loyalty[df_loyalty["AREA"].isin(selected_areas)].groupby("AREA").agg(
-    AVG_NPS=("NPS_SCORE", "mean"),
-    AVG_LTV=("LTV_AMOUNT", "mean"),
-    COUNT=("CUSTOMER_ID", "count"),
-).reset_index()
-area_loyalty["AVG_NPS"] = area_loyalty["AVG_NPS"].round(1)
-area_loyalty["AVG_LTV"] = area_loyalty["AVG_LTV"].round(0)
-
-st.dataframe(
-    area_loyalty.rename(columns={
-        "AREA": "エリア", "AVG_NPS": "平均NPS", "AVG_LTV": "平均LTV（円）", "COUNT": "顧客数"
-    }),
-    use_container_width=True,
-)
+                st.markdown(response_text)
+                st.session_state.messages.append({"role": "assistant", "content": response_text})
