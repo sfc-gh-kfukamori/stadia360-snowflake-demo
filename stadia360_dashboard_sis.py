@@ -1,6 +1,11 @@
 import streamlit as st
 import altair as alt
 import pandas as pd
+import io
+import datetime
+from fpdf import FPDF
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from snowflake.snowpark.context import get_active_session
 
 st.set_page_config(
@@ -168,11 +173,439 @@ df_cm_cv_f = filter_by_area(filter_by_campaign(df_cm_cv))
 
 
 # =====================================================
+# PDF / Excel レポート生成
+# =====================================================
+def generate_pdf_report():
+    """フィルタ済みデータからPDFレポートを生成"""
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # --- CJK font setup ---
+    # Try to find a CJK-capable font on the system; fall back to DejaVu
+    import glob as _glob
+    _cjk_font_loaded = False
+    _cjk_search_paths = [
+        "/usr/share/fonts/**/Noto*CJK*.ttc",
+        "/usr/share/fonts/**/Noto*CJK*.ttf",
+        "/usr/share/fonts/**/NotoSans*.ttf",
+        "/usr/share/fonts/**/DroidSans*.ttf",
+        "/usr/share/fonts/**/wqy*.ttc",
+        "/usr/share/fonts/**/IPAGothic.ttf",
+        "/usr/share/fonts/**/IPAexGothic.ttf",
+        "/usr/share/fonts/**/VL-Gothic-Regular.ttf",
+        "/usr/share/fonts/**/fonts-japanese-gothic.ttf",
+        "/usr/share/fonts/**/*.ttf",
+    ]
+    for pattern in _cjk_search_paths:
+        matches = _glob.glob(pattern, recursive=True)
+        if matches:
+            try:
+                pdf.add_font("cjk", fname=matches[0])
+                pdf.add_font("cjk", style="B", fname=matches[0])
+                _cjk_font_loaded = True
+                break
+            except Exception:
+                continue
+
+    if not _cjk_font_loaded:
+        # Use DejaVu if available (covers Latin/Cyrillic/Greek but not CJK)
+        _dejavu_paths = _glob.glob("/usr/share/fonts/**/DejaVuSans.ttf", recursive=True)
+        if _dejavu_paths:
+            try:
+                pdf.add_font("cjk", fname=_dejavu_paths[0])
+                pdf.add_font("cjk", style="B", fname=_dejavu_paths[0])
+                _cjk_font_loaded = True
+            except Exception:
+                pass
+
+    # Helper: safe text — encode to latin-1 with replacements if no CJK font
+    def safe(text):
+        if text is None:
+            return ""
+        s = str(text)
+        if not _cjk_font_loaded:
+            # Replace non-latin1 chars with '?'
+            return s.encode("latin-1", errors="replace").decode("latin-1")
+        return s
+
+    def _set_font(style="", size=10):
+        if _cjk_font_loaded:
+            pdf.set_font("cjk", style=style.upper(), size=size)
+        else:
+            pdf.set_font("Helvetica", style, size)
+
+    # Helper: add a section title
+    def section_title(title):
+        _set_font("B", 14)
+        pdf.set_fill_color(41, 128, 185)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 10, safe(title), ln=True, fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
+
+    # Helper: add a key-value line
+    def kv_line(key, value):
+        _set_font("B", 10)
+        pdf.cell(60, 6, safe(key), ln=False)
+        _set_font("", 10)
+        pdf.cell(0, 6, safe(value), ln=True)
+
+    # Helper: add a simple table
+    def simple_table(headers, rows, col_widths=None):
+        if col_widths is None:
+            w = 190 / len(headers)
+            col_widths = [w] * len(headers)
+        # Header
+        _set_font("B", 9)
+        pdf.set_fill_color(220, 220, 220)
+        for i, h in enumerate(headers):
+            pdf.cell(col_widths[i], 7, safe(h), border=1, fill=True)
+        pdf.ln()
+        # Rows
+        _set_font("", 9)
+        for row in rows[:20]:  # max 20 rows
+            for i, val in enumerate(row):
+                pdf.cell(col_widths[i], 6, safe(val), border=1)
+            pdf.ln()
+        if len(rows) > 20:
+            _set_font("", 8)
+            pdf.cell(0, 6, f"... and {len(rows) - 20} more rows", ln=True)
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+
+    # ===== Page 1: Cover & KPI =====
+    pdf.add_page()
+    _set_font("B", 22)
+    pdf.cell(0, 20, "STADIA360 Marketing Report", ln=True, align="C")
+    _set_font("", 12)
+    pdf.cell(0, 10, f"Report Date: {today}", ln=True, align="C")
+    pdf.cell(0, 8, safe(f"Campaign: {selected_campaign}"), ln=True, align="C")
+    pdf.cell(0, 8, safe(f"Areas: {', '.join(selected_areas)}"), ln=True, align="C")
+    pdf.ln(10)
+
+    # KPI Summary
+    section_title("KPI Summary")
+    cm_count = df_tv_f[df_tv_f["CM_EXPOSED"] == True].shape[0]
+    total_tv = df_tv_f.shape[0]
+    cm_rate = (cm_count / total_tv * 100) if total_tv > 0 else 0
+    cv_count = df_site_f[df_site_f["CONVERSION_FLAG"] == True].shape[0]
+    total_sessions = df_site_f.shape[0]
+    cvr = (cv_count / total_sessions * 100) if total_sessions > 0 else 0
+    store_visits = df_store_f.shape[0]
+    avg_stay = df_store_f["STAY_MINUTES"].mean() if store_visits > 0 else 0
+    dl_count = df_app_dl_f.shape[0]
+    launch_count = df_app_launch_f.shape[0]
+    total_purchase = df_purchase_f["AMOUNT"].sum()
+    avg_nps = df_loyalty["NPS_SCORE"].mean()
+    total_pv = df_site_f["PAGE_VIEWS"].sum()
+    total_hours = df_tv_f["VIEWING_SECONDS"].sum() / 3600
+
+    kv_line("CM Contacts:", f"{cm_count:,} (Rate: {cm_rate:.1f}%)")
+    kv_line("Site CV:", f"{cv_count:,} (CVR: {cvr:.1f}%)")
+    kv_line("Store Visits:", f"{store_visits:,} (Avg Stay: {avg_stay:.0f} min)")
+    kv_line("App DL / Launch:", f"{dl_count:,} / {launch_count:,}")
+    kv_line("Purchase Total:", f"JPY {total_purchase:,.0f}")
+    kv_line("Avg NPS:", f"{avg_nps:.1f}")
+    kv_line("Total PV:", f"{total_pv:,}")
+    kv_line("Total View Hours:", f"{total_hours:,.0f} hrs")
+    pdf.ln(5)
+
+    # Campaign List
+    section_title("Campaigns")
+    camp_rows = []
+    for _, r in df_campaigns.iterrows():
+        camp_rows.append([
+            safe(r["CAMPAIGN_ID"]), safe(r["CAMPAIGN_NAME"]),
+            safe(r["START_DATE"]), safe(r["END_DATE"]),
+            f"{r['BUDGET_MM']}M JPY",
+        ])
+    simple_table(
+        ["ID", "Name", "Start", "End", "Budget"],
+        camp_rows,
+        [20, 70, 30, 30, 40],
+    )
+    pdf.ln(5)
+
+    # ===== Page 2: TV & CM Analysis =====
+    pdf.add_page()
+    section_title("TV Viewing by Channel")
+    ch_data = df_tv_f.groupby("CHANNEL").agg(
+        VIEWS=("VIEWING_ID", "count"), CM=("CM_EXPOSED", "sum")
+    ).reset_index()
+    ch_data["Rate"] = (ch_data["CM"] / ch_data["VIEWS"] * 100).round(1)
+    ch_rows = [[safe(r["CHANNEL"]), f"{r['VIEWS']:,}", f"{r['CM']:,}", f"{r['Rate']:.1f}%"]
+               for _, r in ch_data.sort_values("VIEWS", ascending=False).iterrows()]
+    simple_table(["Channel", "Views", "CM Contacts", "CM Rate"], ch_rows, [50, 45, 45, 50])
+    pdf.ln(5)
+
+    # CM Effect
+    section_title("CM Effect Analysis (CV Rate)")
+    df_cm_cv_tmp = df_cm_cv_f.copy()
+    df_cm_cv_tmp["CV"] = pd.to_numeric(df_cm_cv_tmp["CONVERSION_FLAG"], errors="coerce").fillna(0).astype(int)
+    ch_cv = df_cm_cv_tmp.groupby("CHANNEL").agg(
+        Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
+    ).reset_index()
+    ch_cv["CVR"] = (ch_cv["CVs"] / ch_cv["Contacts"] * 100).round(2)
+    cv_rows = [[safe(r["CHANNEL"]), f"{r['Contacts']:,}", f"{r['CVs']:,}", f"{r['CVR']:.2f}%"]
+               for _, r in ch_cv.sort_values("CVR", ascending=False).iterrows()]
+    simple_table(["Channel", "CM Contacts", "CVs", "CV Rate"], cv_rows, [50, 45, 45, 50])
+    pdf.ln(5)
+
+    # Creative drill
+    section_title("Creative CV Rate")
+    cr_cv = df_cm_cv_tmp[df_cm_cv_tmp["CREATIVE_NAME"].notna()].groupby("CREATIVE_NAME").agg(
+        Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
+    ).reset_index()
+    cr_cv["CVR"] = (cr_cv["CVs"] / cr_cv["Contacts"] * 100).round(2)
+    cr_rows = [[safe(r["CREATIVE_NAME"]), f"{r['Contacts']:,}", f"{r['CVs']:,}", f"{r['CVR']:.2f}%"]
+               for _, r in cr_cv.sort_values("CVR", ascending=False).iterrows()]
+    simple_table(["Creative", "Contacts", "CVs", "CV Rate"], cr_rows, [60, 40, 40, 50])
+    pdf.ln(5)
+
+    # Program Ranking
+    section_title("Program Ranking (Top 10 by CV Rate)")
+    pgm = df_cm_cv_tmp.groupby("PROGRAM_NAME").agg(
+        Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
+    ).reset_index()
+    pgm["CVR"] = (pgm["CVs"] / pgm["Contacts"] * 100).round(2)
+    pgm = pgm.sort_values("CVR", ascending=False).head(10)
+    pgm_rows = [[safe(r["PROGRAM_NAME"]), f"{r['Contacts']:,}", f"{r['CVs']:,}", f"{r['CVR']:.2f}%"]
+                for _, r in pgm.iterrows()]
+    simple_table(["Program", "Contacts", "CVs", "CV Rate"], pgm_rows, [60, 40, 40, 50])
+
+    # ===== Page 3: Attitude, Site, Purchase =====
+    pdf.add_page()
+    section_title("Attitude Change (Lift)")
+    exposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == True]
+    unexposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == False]
+    lift_rows = []
+    for stage, bef, aft in [("Awareness", "AWARENESS_BEFORE", "AWARENESS_AFTER"),
+                             ("Interest", "INTEREST_BEFORE", "INTEREST_AFTER"),
+                             ("Consider", "CONSIDER_BEFORE", "CONSIDER_AFTER"),
+                             ("Purchase", "PURCHASE_BEFORE", "PURCHASE_AFTER")]:
+        e_lift = (exposed[aft] - exposed[bef]).mean() if len(exposed) > 0 else 0
+        u_lift = (unexposed[aft] - unexposed[bef]).mean() if len(unexposed) > 0 else 0
+        lift_rows.append([stage, f"{e_lift:.2f} pt", f"{u_lift:.2f} pt", f"{e_lift - u_lift:.2f} pt"])
+    simple_table(["Stage", "CM Exposed", "Unexposed", "Diff"], lift_rows, [40, 50, 50, 50])
+    pdf.ln(5)
+
+    # Site Visit
+    section_title("Site Visit Summary")
+    ref_data = df_site_f.groupby("REFERRER_TYPE").agg(
+        Sessions=("SESSION_ID", "count"), CVs=("CONVERSION_FLAG", "sum"), AvgPV=("PAGE_VIEWS", "mean")
+    ).reset_index()
+    ref_data["CVR"] = (ref_data["CVs"] / ref_data["Sessions"] * 100).round(1)
+    ref_rows = [[safe(r["REFERRER_TYPE"]), f"{r['Sessions']:,}", f"{r['CVs']:,}",
+                 f"{r['CVR']:.1f}%", f"{r['AvgPV']:.1f}"]
+                for _, r in ref_data.sort_values("Sessions", ascending=False).iterrows()]
+    simple_table(["Referrer", "Sessions", "CVs", "CVR", "Avg PV"], ref_rows, [40, 35, 30, 35, 50])
+    pdf.ln(5)
+
+    # Purchase
+    section_title("Offline Purchase Summary")
+    cat_data = df_purchase_f.groupby("PRODUCT_CATEGORY").agg(
+        Total=("AMOUNT", "sum"), Count=("PURCHASE_ID", "count")
+    ).reset_index()
+    cat_data["Avg"] = (cat_data["Total"] / cat_data["Count"]).round(0)
+    pur_rows = [[safe(r["PRODUCT_CATEGORY"]), f"JPY {r['Total']:,.0f}", f"{r['Count']:,}", f"JPY {r['Avg']:,.0f}"]
+                for _, r in cat_data.sort_values("Total", ascending=False).iterrows()]
+    simple_table(["Category", "Total Amount", "Count", "Avg Amount"], pur_rows, [50, 50, 40, 50])
+    pdf.ln(3)
+    cm_exp_avg = df_purchase_f[df_purchase_f["CM_EXPOSED"] == True]["AMOUNT"].mean() if len(df_purchase_f[df_purchase_f["CM_EXPOSED"] == True]) > 0 else 0
+    cm_unexp_avg = df_purchase_f[df_purchase_f["CM_EXPOSED"] == False]["AMOUNT"].mean() if len(df_purchase_f[df_purchase_f["CM_EXPOSED"] == False]) > 0 else 0
+    kv_line("CM Exposed Avg:", f"JPY {cm_exp_avg:,.0f}")
+    kv_line("Unexposed Avg:", f"JPY {cm_unexp_avg:,.0f}")
+
+    # ===== Page 4: Store, App, Loyalty =====
+    pdf.add_page()
+    section_title("Store Visits")
+    store_data = df_store_f.groupby("STORE_NAME").agg(
+        Visits=("VISIT_ID", "count"), AvgStay=("STAY_MINUTES", "mean")
+    ).reset_index()
+    store_data["AvgStay"] = store_data["AvgStay"].round(1)
+    st_rows = [[safe(r["STORE_NAME"]), f"{r['Visits']:,}", f"{r['AvgStay']:.1f} min"]
+               for _, r in store_data.sort_values("Visits", ascending=False).iterrows()]
+    simple_table(["Store", "Visits", "Avg Stay"], st_rows, [80, 55, 55])
+    pdf.ln(5)
+
+    section_title("App Downloads & Launches")
+    dl_by_app = df_app_dl_f.groupby("APP_NAME").agg(DL=("DOWNLOAD_ID", "count")).reset_index()
+    launch_by_app = df_app_launch_f.groupby("APP_NAME").agg(Launch=("LAUNCH_ID", "count")).reset_index()
+    app_data = dl_by_app.merge(launch_by_app, on="APP_NAME", how="outer").fillna(0)
+    app_rows = [[safe(r["APP_NAME"]), f"{int(r['DL']):,}", f"{int(r['Launch']):,}"]
+                for _, r in app_data.iterrows()]
+    simple_table(["App", "Downloads", "Launches"], app_rows, [80, 55, 55])
+    pdf.ln(5)
+
+    section_title("Customer Loyalty")
+    seg_data = df_loyalty.groupby("LOYALTY_SEGMENT").agg(
+        Count=("CUSTOMER_ID", "count"), AvgNPS=("NPS_SCORE", "mean"), AvgLTV=("LTV_AMOUNT", "mean")
+    ).reset_index()
+    seg_rows = [[safe(r["LOYALTY_SEGMENT"]), f"{r['Count']:,}", f"{r['AvgNPS']:.1f}", f"JPY {r['AvgLTV']:,.0f}"]
+                for _, r in seg_data.iterrows()]
+    simple_table(["Segment", "Count", "Avg NPS", "Avg LTV"], seg_rows, [50, 40, 50, 50])
+
+    # Output — convert bytearray to bytes for st.download_button compatibility
+    return bytes(pdf.output())
+
+
+def generate_excel_report():
+    """フィルタ済みデータからExcelレポートを生成"""
+    output = io.BytesIO()
+    wb = Workbook()
+
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="2980B9", end_color="2980B9", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    def write_sheet(ws, df, sheet_name=None):
+        if sheet_name:
+            ws.title = sheet_name
+        # Header
+        for col_idx, col_name in enumerate(df.columns, 1):
+            cell = ws.cell(row=1, column=col_idx, value=str(col_name))
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = thin_border
+        # Data
+        for row_idx, row in enumerate(df.itertuples(index=False), 2):
+            for col_idx, val in enumerate(row, 1):
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.border = thin_border
+        # Auto-width
+        for col_idx, col_name in enumerate(df.columns, 1):
+            max_len = max(len(str(col_name)), df[col_name].astype(str).str.len().max() if len(df) > 0 else 0)
+            ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = min(max_len + 4, 40)
+
+    # Sheet 1: KPI
+    ws_kpi = wb.active
+    ws_kpi.title = "KPI Summary"
+    cm_count = df_tv_f[df_tv_f["CM_EXPOSED"] == True].shape[0]
+    total_tv = df_tv_f.shape[0]
+    cv_count = df_site_f[df_site_f["CONVERSION_FLAG"] == True].shape[0]
+    total_sessions = df_site_f.shape[0]
+    kpi_data = pd.DataFrame({
+        "KPI": ["CM Contacts", "CM Rate(%)", "Site CV", "CVR(%)",
+                "Store Visits", "App DL", "App Launch",
+                "Purchase Total(JPY)", "Avg NPS", "Total PV"],
+        "Value": [
+            cm_count, round(cm_count / total_tv * 100, 1) if total_tv > 0 else 0,
+            cv_count, round(cv_count / total_sessions * 100, 1) if total_sessions > 0 else 0,
+            df_store_f.shape[0], df_app_dl_f.shape[0], df_app_launch_f.shape[0],
+            df_purchase_f["AMOUNT"].sum(), round(df_loyalty["NPS_SCORE"].mean(), 1),
+            df_site_f["PAGE_VIEWS"].sum(),
+        ],
+    })
+    write_sheet(ws_kpi, kpi_data, "KPI Summary")
+
+    # Sheet 2: Campaigns
+    ws_camp = wb.create_sheet("Campaigns")
+    write_sheet(ws_camp, df_campaigns[["CAMPAIGN_ID", "CAMPAIGN_NAME", "ADVERTISER",
+                                       "START_DATE", "END_DATE", "BUDGET_MM", "PRODUCT_CATEGORY",
+                                       "TARGET_AREA"]], "Campaigns")
+
+    # Sheet 3: Channel CM Effect
+    ws_ch = wb.create_sheet("Channel CM Effect")
+    df_cm_tmp = df_cm_cv_f.copy()
+    df_cm_tmp["CV"] = pd.to_numeric(df_cm_tmp["CONVERSION_FLAG"], errors="coerce").fillna(0).astype(int)
+    ch_effect = df_cm_tmp.groupby("CHANNEL").agg(
+        CM_Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
+    ).reset_index()
+    ch_effect["CV_Rate(%)"] = (ch_effect["CVs"] / ch_effect["CM_Contacts"] * 100).round(2)
+    write_sheet(ws_ch, ch_effect.sort_values("CV_Rate(%)", ascending=False), "Channel CM Effect")
+
+    # Sheet 4: Creative CV
+    ws_cr = wb.create_sheet("Creative CV")
+    cr_effect = df_cm_tmp[df_cm_tmp["CREATIVE_NAME"].notna()].groupby("CREATIVE_NAME").agg(
+        CM_Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
+    ).reset_index()
+    cr_effect["CV_Rate(%)"] = (cr_effect["CVs"] / cr_effect["CM_Contacts"] * 100).round(2)
+    write_sheet(ws_cr, cr_effect.sort_values("CV_Rate(%)", ascending=False), "Creative CV")
+
+    # Sheet 5: Site Visit
+    ws_site = wb.create_sheet("Site Visit")
+    ref_effect = df_site_f.groupby("REFERRER_TYPE").agg(
+        Sessions=("SESSION_ID", "count"), CVs=("CONVERSION_FLAG", "sum"),
+        Avg_PV=("PAGE_VIEWS", "mean")
+    ).reset_index()
+    ref_effect["CVR(%)"] = (ref_effect["CVs"] / ref_effect["Sessions"] * 100).round(1)
+    ref_effect["Avg_PV"] = ref_effect["Avg_PV"].round(1)
+    write_sheet(ws_site, ref_effect.sort_values("Sessions", ascending=False), "Site Visit")
+
+    # Sheet 6: Purchase
+    ws_pur = wb.create_sheet("Purchase")
+    pur_effect = df_purchase_f.groupby("PRODUCT_CATEGORY").agg(
+        Total_Amount=("AMOUNT", "sum"), Count=("PURCHASE_ID", "count")
+    ).reset_index()
+    pur_effect["Avg_Amount"] = (pur_effect["Total_Amount"] / pur_effect["Count"]).round(0)
+    write_sheet(ws_pur, pur_effect.sort_values("Total_Amount", ascending=False), "Purchase")
+
+    # Sheet 7: Loyalty
+    ws_loy = wb.create_sheet("Loyalty")
+    loy_data = df_loyalty.groupby("LOYALTY_SEGMENT").agg(
+        Count=("CUSTOMER_ID", "count"), Avg_NPS=("NPS_SCORE", "mean"), Avg_LTV=("LTV_AMOUNT", "mean")
+    ).reset_index()
+    loy_data["Avg_NPS"] = loy_data["Avg_NPS"].round(1)
+    loy_data["Avg_LTV"] = loy_data["Avg_LTV"].round(0)
+    write_sheet(ws_loy, loy_data, "Loyalty")
+
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
+# =====================================================
 # タブ構成
 # =====================================================
 tab_dashboard, tab_ai = st.tabs(["ダッシュボード", "AI問い合わせ"])
 
+def _upload_and_get_url(data_bytes, file_name):
+    """ステージにファイルをアップロードしPresigned URLを返す"""
+    stage_path = f"@KFUKAMORI_GEN_DB.STADIA360.STADIA360_STAGE/reports/{file_name}"
+    stream = io.BytesIO(data_bytes)
+    session.file.put_stream(
+        stream,
+        stage_path,
+        auto_compress=False,
+        overwrite=True,
+    )
+    row = session.sql(
+        f"SELECT GET_PRESIGNED_URL(@KFUKAMORI_GEN_DB.STADIA360.STADIA360_STAGE, 'reports/{file_name}', 3600) AS URL"
+    ).collect()
+    return row[0]["URL"]
+
+
 with tab_dashboard:
+
+    # --- レポート出力ボタン ---
+    st.markdown("---")
+    col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 4])
+    today_str = datetime.date.today().strftime("%Y%m%d")
+    with col_dl1:
+        if st.button("PDF Export", key="pdf_gen_btn"):
+            with st.spinner("PDF生成中..."):
+                pdf_bytes = generate_pdf_report()
+                pdf_name = f"STADIA360_Report_{today_str}.pdf"
+                url = _upload_and_get_url(pdf_bytes, pdf_name)
+                st.session_state["pdf_url"] = url
+                st.session_state["pdf_name"] = pdf_name
+        if "pdf_url" in st.session_state:
+            st.markdown(f"[{st.session_state['pdf_name']} をダウンロード]({st.session_state['pdf_url']})")
+    with col_dl2:
+        if st.button("Excel Export", key="excel_gen_btn"):
+            with st.spinner("Excel生成中..."):
+                excel_bytes = generate_excel_report()
+                excel_name = f"STADIA360_Report_{today_str}.xlsx"
+                url = _upload_and_get_url(excel_bytes, excel_name)
+                st.session_state["excel_url"] = url
+                st.session_state["excel_name"] = excel_name
+        if "excel_url" in st.session_state:
+            st.markdown(f"[{st.session_state['excel_name']} をダウンロード]({st.session_state['excel_url']})")
+    st.markdown("---")
 
     # =====================================================
     # 1. 概況サマリー（KPI）

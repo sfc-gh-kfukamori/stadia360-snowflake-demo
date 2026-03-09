@@ -3,8 +3,58 @@
     "orchestration": "auto"
   },
   "instructions": {
-    "orchestration": "あなたは電通のSTADIA360統合マーケティング基盤のデータ分析スペシャリストです。テレビ実視聴ログ、顧客ロイヤリティ、態度変容、サイト来訪、オフライン購買、来店、アプリDL/起動のデータを横断的に分析し、広告効果の検証やマーケティングインサイトの提供を行います。CM接触者と非接触者の比較分析、ファネル分析（認知→興味→検討→購入）、チャネル横断のROI分析が得意です。回答は日本語で行ってください。",
-    "response": "回答は日本語で行ってください。金額は円単位、割合は小数点第1位まで表示してください。分析結果にはビジネス上の示唆も添えてください。"
+    "orchestration": "あなたは電通のSTADIA360統合マーケティング基盤のデータ分析スペシャリストです。テレビ実視聴ログ、顧客ロイヤリティ、態度変容、サイト来訪、オフライン購買、来店、アプリDL/起動のデータを横断的に分析し、広告効果の検証やマーケティングインサイトの提供を行います。CM接触者と非接触者の比較分析、ファネル分析（認知→興味→検討→購入）、チャネル横断のROI分析が得意です。数値データの分析にはstadia360_analyticsツールを使い、利用規約・ポリシー・SLA・料金に関する質問にはstadia360_terms_searchツールを使ってください。回答は日本語で行ってください。",
+    "response": "回答は日本語で行ってください。金額は円単位、割合は小数点第1位まで表示してください。分析結果にはビジネス上の示唆も添えてください。",
+    "sample_questions": [
+      {
+        "question": "CM接触者と非接触者の購買金額の差はどれくらいですか？",
+        "answer": "stadia360_analyticsツールで購買データを分析します。"
+      },
+      {
+        "question": "キャンペーン別のサイト来訪CV率を比較してください",
+        "answer": "stadia360_analyticsツールでサイト来訪データを分析します。"
+      },
+      {
+        "question": "ロイヤリティセグメント別のNPSスコアとLTVの関係を教えてください",
+        "answer": "stadia360_analyticsツールで顧客ロイヤリティデータを分析します。"
+      },
+      {
+        "question": "テレビCM接触後の態度変容（認知→興味→検討→購入意向）のファネルを見せてください",
+        "answer": "stadia360_analyticsツールで態度変容データを分析します。"
+      },
+      {
+        "question": "チャンネル別・時間帯別のCM接触率はどうなっていますか？",
+        "answer": "stadia360_analyticsツールでテレビ視聴ログを分析します。"
+      },
+      {
+        "question": "アプリDL数をOS別・キャンペーン別に比較してください",
+        "answer": "stadia360_analyticsツールでアプリDLデータを分析します。"
+      },
+      {
+        "question": "来店頻度と購買金額の相関を分析してください",
+        "answer": "stadia360_analyticsツールで来店・購買データを横断分析します。"
+      },
+      {
+        "question": "全キャンペーンの予算と実績ROIを一覧で見せてください",
+        "answer": "stadia360_analyticsツールでキャンペーンデータを分析します。"
+      },
+      {
+        "question": "STADIA360の料金プランを教えてください",
+        "answer": "stadia360_terms_searchツールで利用規約の料金セクションを検索します。"
+      },
+      {
+        "question": "SLAの稼働率保証は何%ですか？",
+        "answer": "stadia360_terms_searchツールでSLAセクションを検索します。"
+      },
+      {
+        "question": "データの保存期間はどのくらいですか？",
+        "answer": "stadia360_terms_searchツールでプライバシーポリシーを検索します。"
+      },
+      {
+        "question": "解約時のデータ取り扱いはどうなりますか？",
+        "answer": "stadia360_terms_searchツールで契約解約セクションを検索します。"
+      }
+    ]
   },
   "tools": [
     {
@@ -12,6 +62,13 @@
         "type": "cortex_analyst_text_to_sql",
         "name": "stadia360_analytics",
         "description": "STADIA360統合マーケティング基盤のデータを分析するツール。テレビ視聴ログ（チャンネル別・時間帯別・CM接触率）、顧客ロイヤリティ（NPS・LTV・セグメント）、態度変容（認知・興味・検討・購入の前後比較）、サイト来訪（流入経路・PV・CV）、オフライン購買（店舗・カテゴリ・金額）、来店（店舗・滞在時間）、アプリDL/起動（アプリ別・OS別）のデータをクエリできます。キャンペーンIDで横断分析が可能です。"
+      }
+    },
+    {
+      "tool_spec": {
+        "type": "cortex_search",
+        "name": "stadia360_terms_search",
+        "description": "STADIA360の利用規約・サービス概要・料金プラン・SLA・プライバシーポリシー・知的財産・契約条件・免責事項・データ収集ポリシーなどを検索するツール。利用規約やポリシーに関する質問にはこのツールを使ってください。"
       }
     },
     {
@@ -36,6 +93,32 @@
         "warehouse": ""
       },
       "semantic_view": "KFUKAMORI_GEN_DB.STADIA360.STADIA360_ANALYTICS"
+    },
+    "stadia360_terms_search": {
+      "name": "KFUKAMORI_GEN_DB.STADIA360.STADIA360_TERMS_SEARCH",
+      "max_results": 5,
+      "title_column": "SECTION_TITLE",
+      "id_column": "SECTION_ID",
+      "columns_and_descriptions": {
+        "CONTENT": {
+          "description": "利用規約の本文。サービス概要、定義、アクセス権、データ処理、プライバシー、料金、SLA、知的財産、免責、解約、守秘義務、利用ポリシー、第三者連携、準拠法などの内容を含む。",
+          "type": "string",
+          "searchable": true,
+          "filterable": false
+        },
+        "SECTION_TITLE": {
+          "description": "利用規約のセクションタイトル。例: Service Overview, Fees Billing and Payment Terms, Privacy, SLA, Acceptable Use Policy",
+          "type": "string",
+          "searchable": true,
+          "filterable": true
+        },
+        "CATEGORY": {
+          "description": "セクションのカテゴリ。値: General, Access, Data, Privacy, Billing, SLA, Legal, Contract",
+          "type": "string",
+          "searchable": false,
+          "filterable": true
+        }
+      }
     }
   }
 }
