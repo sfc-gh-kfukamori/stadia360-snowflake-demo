@@ -6,6 +6,10 @@ import datetime
 from fpdf import FPDF
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
 from snowflake.snowpark.context import get_active_session
 
 st.set_page_config(
@@ -558,6 +562,273 @@ def generate_excel_report():
     return output.getvalue()
 
 
+def generate_pptx_report():
+    """フィルタ済みデータからPPTXレポートを生成"""
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    BLUE = RGBColor(41, 128, 185)
+    DARK = RGBColor(44, 62, 80)
+    WHITE = RGBColor(255, 255, 255)
+    GRAY_BG = RGBColor(240, 240, 240)
+
+    def _add_slide():
+        layout = prs.slide_layouts[6]  # Blank
+        return prs.slides.add_slide(layout)
+
+    def _add_title_bar(slide, text, top=Inches(0.3)):
+        txBox = slide.shapes.add_textbox(Inches(0.5), top, Inches(12.3), Inches(0.6))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = text
+        p.font.size = Pt(24)
+        p.font.bold = True
+        p.font.color.rgb = BLUE
+        return top + Inches(0.7)
+
+    def _add_table(slide, headers, rows, left=Inches(0.5), top=Inches(1.2), width=Inches(12.3), row_height=Inches(0.35)):
+        n_rows = min(len(rows), 20) + 1  # header + data (max 20)
+        n_cols = len(headers)
+        col_w = int(width / n_cols)
+        tbl_shape = slide.shapes.add_table(n_rows, n_cols, left, top, width, Inches(0.35 * n_rows))
+        tbl = tbl_shape.table
+        # Header
+        for i, h in enumerate(headers):
+            cell = tbl.cell(0, i)
+            cell.text = str(h)
+            for paragraph in cell.text_frame.paragraphs:
+                paragraph.font.size = Pt(11)
+                paragraph.font.bold = True
+                paragraph.font.color.rgb = WHITE
+                paragraph.alignment = PP_ALIGN.CENTER
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = BLUE
+        # Data rows
+        for r_idx, row in enumerate(rows[:20]):
+            for c_idx, val in enumerate(row):
+                cell = tbl.cell(r_idx + 1, c_idx)
+                cell.text = str(val) if val is not None else ""
+                for paragraph in cell.text_frame.paragraphs:
+                    paragraph.font.size = Pt(10)
+                    paragraph.alignment = PP_ALIGN.CENTER
+                if r_idx % 2 == 1:
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = GRAY_BG
+        return tbl_shape
+
+    def _add_kv_box(slide, items, left=Inches(0.5), top=Inches(1.2)):
+        """Add key-value pairs as a text box. items = [(key, value), ...]"""
+        txBox = slide.shapes.add_textbox(left, top, Inches(12.3), Inches(5.5))
+        tf = txBox.text_frame
+        tf.word_wrap = True
+        for i, (k, v) in enumerate(items):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            run_k = p.add_run()
+            run_k.text = f"{k}  "
+            run_k.font.size = Pt(16)
+            run_k.font.bold = True
+            run_k.font.color.rgb = DARK
+            run_v = p.add_run()
+            run_v.text = str(v)
+            run_v.font.size = Pt(16)
+            run_v.font.color.rgb = BLUE
+            p.space_after = Pt(8)
+
+    today = datetime.date.today().strftime("%Y-%m-%d")
+
+    # ===== Slide 1: Title =====
+    slide = _add_slide()
+    # Background shape
+    bg = slide.shapes.add_shape(1, Inches(0), Inches(0), prs.slide_width, prs.slide_height)
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = RGBColor(23, 37, 84)
+    bg.line.fill.background()
+    # Title text
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(11), Inches(3))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = "STADIA360"
+    p.font.size = Pt(48)
+    p.font.bold = True
+    p.font.color.rgb = WHITE
+    p.alignment = PP_ALIGN.CENTER
+    p2 = tf.add_paragraph()
+    p2.text = "Marketing Analytics Report"
+    p2.font.size = Pt(28)
+    p2.font.color.rgb = RGBColor(147, 197, 253)
+    p2.alignment = PP_ALIGN.CENTER
+    p3 = tf.add_paragraph()
+    p3.text = f"\nReport Date: {today}"
+    p3.font.size = Pt(18)
+    p3.font.color.rgb = RGBColor(200, 200, 200)
+    p3.alignment = PP_ALIGN.CENTER
+    p4 = tf.add_paragraph()
+    p4.text = f"Campaign: {selected_campaign}"
+    p4.font.size = Pt(16)
+    p4.font.color.rgb = RGBColor(200, 200, 200)
+    p4.alignment = PP_ALIGN.CENTER
+    p5 = tf.add_paragraph()
+    p5.text = f"Areas: {', '.join(selected_areas)}"
+    p5.font.size = Pt(16)
+    p5.font.color.rgb = RGBColor(200, 200, 200)
+    p5.alignment = PP_ALIGN.CENTER
+
+    # ===== Slide 2: KPI Summary =====
+    slide = _add_slide()
+    _add_title_bar(slide, "KPI Summary")
+    cm_count = df_tv_f[df_tv_f["CM_EXPOSED"] == True].shape[0]
+    total_tv = df_tv_f.shape[0]
+    cm_rate = (cm_count / total_tv * 100) if total_tv > 0 else 0
+    cv_count = df_site_f[df_site_f["CONVERSION_FLAG"] == True].shape[0]
+    total_sessions = df_site_f.shape[0]
+    cvr = (cv_count / total_sessions * 100) if total_sessions > 0 else 0
+    store_visits = df_store_f.shape[0]
+    avg_stay = df_store_f["STAY_MINUTES"].mean() if store_visits > 0 else 0
+    dl_count = df_app_dl_f.shape[0]
+    launch_count = df_app_launch_f.shape[0]
+    total_purchase = df_purchase_f["AMOUNT"].sum()
+    avg_nps = df_loyalty["NPS_SCORE"].mean()
+    total_pv = df_site_f["PAGE_VIEWS"].sum()
+    total_hours = df_tv_f["VIEWING_SECONDS"].sum() / 3600
+    _add_kv_box(slide, [
+        ("CM Contacts:", f"{cm_count:,} (Rate: {cm_rate:.1f}%)"),
+        ("Site CV:", f"{cv_count:,} (CVR: {cvr:.1f}%)"),
+        ("Store Visits:", f"{store_visits:,} (Avg Stay: {avg_stay:.0f} min)"),
+        ("App DL / Launch:", f"{dl_count:,} / {launch_count:,}"),
+        ("Purchase Total:", f"JPY {total_purchase:,.0f}"),
+        ("Avg NPS:", f"{avg_nps:.1f}"),
+        ("Total PV:", f"{total_pv:,}"),
+        ("Total View Hours:", f"{total_hours:,.0f} hrs"),
+    ])
+
+    # ===== Slide 3: TV Viewing by Channel =====
+    slide = _add_slide()
+    _add_title_bar(slide, "TV Viewing by Channel")
+    ch_data = df_tv_f.groupby("CHANNEL").agg(
+        VIEWS=("VIEWING_ID", "count"), CM=("CM_EXPOSED", "sum")
+    ).reset_index()
+    ch_data["Rate"] = (ch_data["CM"] / ch_data["VIEWS"] * 100).round(1)
+    ch_rows = [[r["CHANNEL"], f"{r['VIEWS']:,}", f"{r['CM']:,}", f"{r['Rate']:.1f}%"]
+               for _, r in ch_data.sort_values("VIEWS", ascending=False).iterrows()]
+    _add_table(slide, ["Channel", "Views", "CM Contacts", "CM Rate"], ch_rows)
+
+    # ===== Slide 4: CM Effect + Creative =====
+    slide = _add_slide()
+    _add_title_bar(slide, "CM Effect Analysis (CV Rate)")
+    df_cm_cv_tmp = df_cm_cv_f.copy()
+    df_cm_cv_tmp["CV"] = pd.to_numeric(df_cm_cv_tmp["CONVERSION_FLAG"], errors="coerce").fillna(0).astype(int)
+    ch_cv = df_cm_cv_tmp.groupby("CHANNEL").agg(
+        Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
+    ).reset_index()
+    ch_cv["CVR"] = (ch_cv["CVs"] / ch_cv["Contacts"] * 100).round(2)
+    cv_rows = [[r["CHANNEL"], f"{r['Contacts']:,}", f"{r['CVs']:,}", f"{r['CVR']:.2f}%"]
+               for _, r in ch_cv.sort_values("CVR", ascending=False).iterrows()]
+    _add_table(slide, ["Channel", "CM Contacts", "CVs", "CV Rate"], cv_rows, top=Inches(1.2))
+    # Creative sub-table below
+    cr_cv = df_cm_cv_tmp[df_cm_cv_tmp["CREATIVE_NAME"].notna()].groupby("CREATIVE_NAME").agg(
+        Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
+    ).reset_index()
+    cr_cv["CVR"] = (cr_cv["CVs"] / cr_cv["Contacts"] * 100).round(2)
+    cr_rows = [[r["CREATIVE_NAME"], f"{r['Contacts']:,}", f"{r['CVs']:,}", f"{r['CVR']:.2f}%"]
+               for _, r in cr_cv.sort_values("CVR", ascending=False).iterrows()]
+    n_ch_rows = min(len(cv_rows), 20) + 1
+    cr_top = Inches(1.2) + Inches(0.35 * n_ch_rows) + Inches(0.5)
+    txBox = slide.shapes.add_textbox(Inches(0.5), cr_top - Inches(0.4), Inches(6), Inches(0.4))
+    p = txBox.text_frame.paragraphs[0]
+    p.text = "Creative CV Rate"
+    p.font.size = Pt(18)
+    p.font.bold = True
+    p.font.color.rgb = BLUE
+    _add_table(slide, ["Creative", "Contacts", "CVs", "CV Rate"], cr_rows, top=cr_top)
+
+    # ===== Slide 5: Attitude Change =====
+    slide = _add_slide()
+    _add_title_bar(slide, "Attitude Change (CM Exposed vs Unexposed)")
+    exposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == True]
+    unexposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == False]
+    lift_rows = []
+    for stage, bef, aft in [("Awareness", "AWARENESS_BEFORE", "AWARENESS_AFTER"),
+                             ("Interest", "INTEREST_BEFORE", "INTEREST_AFTER"),
+                             ("Consider", "CONSIDER_BEFORE", "CONSIDER_AFTER"),
+                             ("Purchase", "PURCHASE_BEFORE", "PURCHASE_AFTER")]:
+        e_lift = (exposed[aft] - exposed[bef]).mean() if len(exposed) > 0 else 0
+        u_lift = (unexposed[aft] - unexposed[bef]).mean() if len(unexposed) > 0 else 0
+        lift_rows.append([stage, f"{e_lift:.2f} pt", f"{u_lift:.2f} pt", f"{e_lift - u_lift:.2f} pt"])
+    _add_table(slide, ["Stage", "CM Exposed", "Unexposed", "Diff"], lift_rows)
+
+    # ===== Slide 6: Site Visit + Purchase =====
+    slide = _add_slide()
+    _add_title_bar(slide, "Site Visit & Offline Purchase")
+    ref_data = df_site_f.groupby("REFERRER_TYPE").agg(
+        Sessions=("SESSION_ID", "count"), CVs=("CONVERSION_FLAG", "sum"), AvgPV=("PAGE_VIEWS", "mean")
+    ).reset_index()
+    ref_data["CVR"] = (ref_data["CVs"] / ref_data["Sessions"] * 100).round(1)
+    ref_rows = [[r["REFERRER_TYPE"], f"{r['Sessions']:,}", f"{r['CVs']:,}", f"{r['CVR']:.1f}%", f"{r['AvgPV']:.1f}"]
+                for _, r in ref_data.sort_values("Sessions", ascending=False).iterrows()]
+    _add_table(slide, ["Referrer", "Sessions", "CVs", "CVR", "Avg PV"], ref_rows, top=Inches(1.2))
+    # Purchase sub-table
+    cat_data = df_purchase_f.groupby("PRODUCT_CATEGORY").agg(
+        Total=("AMOUNT", "sum"), Count=("PURCHASE_ID", "count")
+    ).reset_index()
+    cat_data["Avg"] = (cat_data["Total"] / cat_data["Count"]).round(0)
+    pur_rows = [[r["PRODUCT_CATEGORY"], f"JPY {r['Total']:,.0f}", f"{r['Count']:,}", f"JPY {r['Avg']:,.0f}"]
+                for _, r in cat_data.sort_values("Total", ascending=False).iterrows()]
+    n_ref_rows = min(len(ref_rows), 20) + 1
+    pur_top = Inches(1.2) + Inches(0.35 * n_ref_rows) + Inches(0.5)
+    txBox = slide.shapes.add_textbox(Inches(0.5), pur_top - Inches(0.4), Inches(6), Inches(0.4))
+    p = txBox.text_frame.paragraphs[0]
+    p.text = "Offline Purchase by Category"
+    p.font.size = Pt(18)
+    p.font.bold = True
+    p.font.color.rgb = BLUE
+    _add_table(slide, ["Category", "Total Amount", "Count", "Avg Amount"], pur_rows, top=pur_top)
+
+    # ===== Slide 7: Store + App =====
+    slide = _add_slide()
+    _add_title_bar(slide, "Store Visit & App Analysis")
+    store_data = df_store_f.groupby("STORE_NAME").agg(
+        Visits=("VISIT_ID", "count"), AvgStay=("STAY_MINUTES", "mean")
+    ).reset_index()
+    store_data["AvgStay"] = store_data["AvgStay"].round(1)
+    st_rows = [[r["STORE_NAME"], f"{r['Visits']:,}", f"{r['AvgStay']:.1f} min"]
+               for _, r in store_data.sort_values("Visits", ascending=False).iterrows()]
+    _add_table(slide, ["Store", "Visits", "Avg Stay"], st_rows, top=Inches(1.2))
+    # App sub-table
+    dl_by_app = df_app_dl_f.groupby("APP_NAME").agg(DL=("DOWNLOAD_ID", "count")).reset_index()
+    launch_by_app = df_app_launch_f.groupby("APP_NAME").agg(Launch=("LAUNCH_ID", "count")).reset_index()
+    app_data = dl_by_app.merge(launch_by_app, on="APP_NAME", how="outer").fillna(0)
+    app_rows = [[r["APP_NAME"], f"{int(r['DL']):,}", f"{int(r['Launch']):,}"]
+                for _, r in app_data.iterrows()]
+    n_st_rows = min(len(st_rows), 20) + 1
+    app_top = Inches(1.2) + Inches(0.35 * n_st_rows) + Inches(0.5)
+    txBox = slide.shapes.add_textbox(Inches(0.5), app_top - Inches(0.4), Inches(6), Inches(0.4))
+    p = txBox.text_frame.paragraphs[0]
+    p.text = "App Downloads & Launches"
+    p.font.size = Pt(18)
+    p.font.bold = True
+    p.font.color.rgb = BLUE
+    _add_table(slide, ["App", "Downloads", "Launches"], app_rows, top=app_top)
+
+    # ===== Slide 8: Loyalty =====
+    slide = _add_slide()
+    _add_title_bar(slide, "Customer Loyalty")
+    seg_data = df_loyalty.groupby("LOYALTY_SEGMENT").agg(
+        Count=("CUSTOMER_ID", "count"), AvgNPS=("NPS_SCORE", "mean"), AvgLTV=("LTV_AMOUNT", "mean")
+    ).reset_index()
+    seg_rows = [[r["LOYALTY_SEGMENT"], f"{r['Count']:,}", f"{r['AvgNPS']:.1f}", f"JPY {r['AvgLTV']:,.0f}"]
+                for _, r in seg_data.iterrows()]
+    _add_table(slide, ["Segment", "Count", "Avg NPS", "Avg LTV"], seg_rows)
+
+    # Output
+    output = io.BytesIO()
+    prs.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
 # =====================================================
 # タブ構成
 # =====================================================
@@ -583,7 +854,7 @@ with tab_dashboard:
 
     # --- レポート出力ボタン ---
     st.markdown("---")
-    col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 4])
+    col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1, 1, 1, 3])
     today_str = datetime.date.today().strftime("%Y%m%d")
     with col_dl1:
         if st.button("PDF Export", key="pdf_gen_btn"):
@@ -605,6 +876,16 @@ with tab_dashboard:
                 st.session_state["excel_name"] = excel_name
         if "excel_url" in st.session_state:
             st.markdown(f"[{st.session_state['excel_name']} をダウンロード]({st.session_state['excel_url']})")
+    with col_dl3:
+        if st.button("PPTX Export", key="pptx_gen_btn"):
+            with st.spinner("PPTX生成中..."):
+                pptx_bytes = generate_pptx_report()
+                pptx_name = f"STADIA360_Report_{today_str}.pptx"
+                url = _upload_and_get_url(pptx_bytes, pptx_name)
+                st.session_state["pptx_url"] = url
+                st.session_state["pptx_name"] = pptx_name
+        if "pptx_url" in st.session_state:
+            st.markdown(f"[{st.session_state['pptx_name']} をダウンロード]({st.session_state['pptx_url']})")
     st.markdown("---")
 
     # =====================================================

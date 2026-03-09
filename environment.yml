@@ -4,3 +4,4 @@ channels:
 dependencies:
   - fpdf2
   - openpyxl
+  - python-pptx
