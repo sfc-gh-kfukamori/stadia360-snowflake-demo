@@ -10,6 +10,10 @@ from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 from snowflake.snowpark.context import get_active_session
 
 st.set_page_config(
@@ -563,7 +567,7 @@ def generate_excel_report():
 
 
 def generate_pptx_report():
-    """フィルタ済みデータからPPTXレポートを生成"""
+    """フィルタ済みデータからPPTXレポートを生成（matplotlibグラフ付き）"""
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -572,6 +576,13 @@ def generate_pptx_report():
     DARK = RGBColor(44, 62, 80)
     WHITE = RGBColor(255, 255, 255)
     GRAY_BG = RGBColor(240, 240, 240)
+    # matplotlib color palette
+    MPL_BLUE = "#2980B9"
+    MPL_ORANGE = "#E67E22"
+    MPL_GREEN = "#27AE60"
+    MPL_RED = "#E74C3C"
+    MPL_PURPLE = "#8E44AD"
+    MPL_COLORS = [MPL_BLUE, MPL_ORANGE, MPL_GREEN, MPL_RED, MPL_PURPLE, "#3498DB", "#F39C12", "#1ABC9C"]
 
     def _add_slide():
         layout = prs.slide_layouts[6]  # Blank
@@ -588,30 +599,40 @@ def generate_pptx_report():
         p.font.color.rgb = BLUE
         return top + Inches(0.7)
 
-    def _add_table(slide, headers, rows, left=Inches(0.5), top=Inches(1.2), width=Inches(12.3), row_height=Inches(0.35)):
-        n_rows = min(len(rows), 20) + 1  # header + data (max 20)
+    def _fig_to_image(fig):
+        """matplotlibのfigをBytesIOのPNG画像に変換"""
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+
+    def _add_chart_image(slide, fig, left=Inches(0.5), top=Inches(1.1), width=Inches(6), height=Inches(5.5)):
+        """matplotlibのfigをスライドに画像として挿入"""
+        img_buf = _fig_to_image(fig)
+        slide.shapes.add_picture(img_buf, left, top, width, height)
+
+    def _add_table(slide, headers, rows, left=Inches(0.5), top=Inches(1.2), width=Inches(5.8)):
+        n_rows = min(len(rows), 20) + 1
         n_cols = len(headers)
-        col_w = int(width / n_cols)
-        tbl_shape = slide.shapes.add_table(n_rows, n_cols, left, top, width, Inches(0.35 * n_rows))
+        tbl_shape = slide.shapes.add_table(n_rows, n_cols, left, top, width, Inches(0.3 * n_rows))
         tbl = tbl_shape.table
-        # Header
         for i, h in enumerate(headers):
             cell = tbl.cell(0, i)
             cell.text = str(h)
             for paragraph in cell.text_frame.paragraphs:
-                paragraph.font.size = Pt(11)
+                paragraph.font.size = Pt(9)
                 paragraph.font.bold = True
                 paragraph.font.color.rgb = WHITE
                 paragraph.alignment = PP_ALIGN.CENTER
             cell.fill.solid()
             cell.fill.fore_color.rgb = BLUE
-        # Data rows
         for r_idx, row in enumerate(rows[:20]):
             for c_idx, val in enumerate(row):
                 cell = tbl.cell(r_idx + 1, c_idx)
                 cell.text = str(val) if val is not None else ""
                 for paragraph in cell.text_frame.paragraphs:
-                    paragraph.font.size = Pt(10)
+                    paragraph.font.size = Pt(8)
                     paragraph.alignment = PP_ALIGN.CENTER
                 if r_idx % 2 == 1:
                     cell.fill.solid()
@@ -619,8 +640,7 @@ def generate_pptx_report():
         return tbl_shape
 
     def _add_kv_box(slide, items, left=Inches(0.5), top=Inches(1.2)):
-        """Add key-value pairs as a text box. items = [(key, value), ...]"""
-        txBox = slide.shapes.add_textbox(left, top, Inches(12.3), Inches(5.5))
+        txBox = slide.shapes.add_textbox(left, top, Inches(5.8), Inches(5.5))
         tf = txBox.text_frame
         tf.word_wrap = True
         for i, (k, v) in enumerate(items):
@@ -640,12 +660,10 @@ def generate_pptx_report():
 
     # ===== Slide 1: Title =====
     slide = _add_slide()
-    # Background shape
     bg = slide.shapes.add_shape(1, Inches(0), Inches(0), prs.slide_width, prs.slide_height)
     bg.fill.solid()
     bg.fill.fore_color.rgb = RGBColor(23, 37, 84)
     bg.line.fill.background()
-    # Title text
     txBox = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(11), Inches(3))
     tf = txBox.text_frame
     tf.word_wrap = True
@@ -676,7 +694,7 @@ def generate_pptx_report():
     p5.font.color.rgb = RGBColor(200, 200, 200)
     p5.alignment = PP_ALIGN.CENTER
 
-    # ===== Slide 2: KPI Summary =====
+    # ===== Slide 2: KPI Summary (KV left + bar chart right) =====
     slide = _add_slide()
     _add_title_bar(slide, "KPI Summary")
     cm_count = df_tv_f[df_tv_f["CM_EXPOSED"] == True].shape[0]
@@ -694,28 +712,54 @@ def generate_pptx_report():
     total_pv = df_site_f["PAGE_VIEWS"].sum()
     total_hours = df_tv_f["VIEWING_SECONDS"].sum() / 3600
     _add_kv_box(slide, [
-        ("CM Contacts:", f"{cm_count:,} (Rate: {cm_rate:.1f}%)"),
+        ("CM Contacts:", f"{cm_count:,} ({cm_rate:.1f}%)"),
         ("Site CV:", f"{cv_count:,} (CVR: {cvr:.1f}%)"),
-        ("Store Visits:", f"{store_visits:,} (Avg Stay: {avg_stay:.0f} min)"),
+        ("Store Visits:", f"{store_visits:,} ({avg_stay:.0f} min avg)"),
         ("App DL / Launch:", f"{dl_count:,} / {launch_count:,}"),
         ("Purchase Total:", f"JPY {total_purchase:,.0f}"),
         ("Avg NPS:", f"{avg_nps:.1f}"),
         ("Total PV:", f"{total_pv:,}"),
-        ("Total View Hours:", f"{total_hours:,.0f} hrs"),
+        ("View Hours:", f"{total_hours:,.0f} hrs"),
     ])
+    # KPI bar chart on right
+    fig, ax = plt.subplots(figsize=(5, 4))
+    kpi_labels = ["CM Rate%", "CVR%", "Avg NPS"]
+    kpi_vals = [cm_rate, cvr, avg_nps]
+    bars = ax.bar(kpi_labels, kpi_vals, color=[MPL_BLUE, MPL_ORANGE, MPL_GREEN])
+    ax.set_ylabel("Value")
+    ax.set_title("Key Metrics Overview")
+    for bar, val in zip(bars, kpi_vals):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5, f"{val:.1f}", ha="center", fontsize=10)
+    fig.tight_layout()
+    _add_chart_image(slide, fig, left=Inches(7), top=Inches(1.2), width=Inches(5.8), height=Inches(5))
 
-    # ===== Slide 3: TV Viewing by Channel =====
+    # ===== Slide 3: TV Viewing by Channel (bar chart + table) =====
     slide = _add_slide()
     _add_title_bar(slide, "TV Viewing by Channel")
     ch_data = df_tv_f.groupby("CHANNEL").agg(
         VIEWS=("VIEWING_ID", "count"), CM=("CM_EXPOSED", "sum")
     ).reset_index()
     ch_data["Rate"] = (ch_data["CM"] / ch_data["VIEWS"] * 100).round(1)
+    ch_data = ch_data.sort_values("VIEWS", ascending=True)
+    # Chart
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
+    y_pos = range(len(ch_data))
+    ax.barh(list(y_pos), ch_data["VIEWS"].values, color=MPL_BLUE, alpha=0.7, label="Total Views")
+    ax.barh(list(y_pos), ch_data["CM"].values, color=MPL_ORANGE, alpha=0.9, label="CM Contacts")
+    ax.set_yticks(list(y_pos))
+    ax.set_yticklabels(ch_data["CHANNEL"].values, fontsize=9)
+    ax.set_xlabel("Count")
+    ax.set_title("Views & CM Contacts by Channel")
+    ax.legend(loc="lower right", fontsize=8)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+    fig.tight_layout()
+    _add_chart_image(slide, fig, left=Inches(0.5), top=Inches(1.1), width=Inches(6.3), height=Inches(5.5))
+    # Table on right
     ch_rows = [[r["CHANNEL"], f"{r['VIEWS']:,}", f"{r['CM']:,}", f"{r['Rate']:.1f}%"]
                for _, r in ch_data.sort_values("VIEWS", ascending=False).iterrows()]
-    _add_table(slide, ["Channel", "Views", "CM Contacts", "CM Rate"], ch_rows)
+    _add_table(slide, ["Channel", "Views", "CM", "Rate"], ch_rows, left=Inches(7.2), top=Inches(1.2), width=Inches(5.6))
 
-    # ===== Slide 4: CM Effect + Creative =====
+    # ===== Slide 4: CM Effect Analysis (grouped bar + creative table) =====
     slide = _add_slide()
     _add_title_bar(slide, "CM Effect Analysis (CV Rate)")
     df_cm_cv_tmp = df_cm_cv_f.copy()
@@ -724,40 +768,73 @@ def generate_pptx_report():
         Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
     ).reset_index()
     ch_cv["CVR"] = (ch_cv["CVs"] / ch_cv["Contacts"] * 100).round(2)
-    cv_rows = [[r["CHANNEL"], f"{r['Contacts']:,}", f"{r['CVs']:,}", f"{r['CVR']:.2f}%"]
-               for _, r in ch_cv.sort_values("CVR", ascending=False).iterrows()]
-    _add_table(slide, ["Channel", "CM Contacts", "CVs", "CV Rate"], cv_rows, top=Inches(1.2))
-    # Creative sub-table below
+    ch_cv = ch_cv.sort_values("CVR", ascending=False)
+    # Chart
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
+    x = range(len(ch_cv))
+    ax.bar(list(x), ch_cv["Contacts"].values, color=MPL_BLUE, alpha=0.7, label="CM Contacts")
+    ax2 = ax.twinx()
+    ax2.plot(list(x), ch_cv["CVR"].values, color=MPL_RED, marker="o", linewidth=2, label="CV Rate %")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(ch_cv["CHANNEL"].values, fontsize=8, rotation=30, ha="right")
+    ax.set_ylabel("CM Contacts")
+    ax2.set_ylabel("CV Rate (%)")
+    ax.set_title("CM Contacts & CV Rate by Channel")
+    ax.legend(loc="upper left", fontsize=8)
+    ax2.legend(loc="upper right", fontsize=8)
+    fig.tight_layout()
+    _add_chart_image(slide, fig, left=Inches(0.5), top=Inches(1.1), width=Inches(6.3), height=Inches(5.5))
+    # Creative table on right
     cr_cv = df_cm_cv_tmp[df_cm_cv_tmp["CREATIVE_NAME"].notna()].groupby("CREATIVE_NAME").agg(
         Contacts=("VIEWING_ID", "count"), CVs=("CV", "sum")
     ).reset_index()
     cr_cv["CVR"] = (cr_cv["CVs"] / cr_cv["Contacts"] * 100).round(2)
     cr_rows = [[r["CREATIVE_NAME"], f"{r['Contacts']:,}", f"{r['CVs']:,}", f"{r['CVR']:.2f}%"]
                for _, r in cr_cv.sort_values("CVR", ascending=False).iterrows()]
-    n_ch_rows = min(len(cv_rows), 20) + 1
-    cr_top = Inches(1.2) + Inches(0.35 * n_ch_rows) + Inches(0.5)
-    txBox = slide.shapes.add_textbox(Inches(0.5), cr_top - Inches(0.4), Inches(6), Inches(0.4))
+    txBox = slide.shapes.add_textbox(Inches(7.2), Inches(1.0), Inches(5), Inches(0.35))
     p = txBox.text_frame.paragraphs[0]
     p.text = "Creative CV Rate"
-    p.font.size = Pt(18)
+    p.font.size = Pt(14)
     p.font.bold = True
     p.font.color.rgb = BLUE
-    _add_table(slide, ["Creative", "Contacts", "CVs", "CV Rate"], cr_rows, top=cr_top)
+    _add_table(slide, ["Creative", "Contacts", "CVs", "CVR"], cr_rows, left=Inches(7.2), top=Inches(1.4), width=Inches(5.6))
 
-    # ===== Slide 5: Attitude Change =====
+    # ===== Slide 5: Attitude Change (grouped bar chart) =====
     slide = _add_slide()
     _add_title_bar(slide, "Attitude Change (CM Exposed vs Unexposed)")
     exposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == True]
     unexposed = df_attitude_f[df_attitude_f["CM_EXPOSED"] == False]
+    stages = ["Awareness", "Interest", "Consider", "Purchase"]
+    cols_bef_aft = [("AWARENESS_BEFORE", "AWARENESS_AFTER"),
+                    ("INTEREST_BEFORE", "INTEREST_AFTER"),
+                    ("CONSIDER_BEFORE", "CONSIDER_AFTER"),
+                    ("PURCHASE_BEFORE", "PURCHASE_AFTER")]
+    e_lifts, u_lifts = [], []
+    for bef, aft in cols_bef_aft:
+        e_lifts.append((exposed[aft] - exposed[bef]).mean() if len(exposed) > 0 else 0)
+        u_lifts.append((unexposed[aft] - unexposed[bef]).mean() if len(unexposed) > 0 else 0)
+    # Chart
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    x = range(len(stages))
+    w = 0.35
+    ax.bar([i - w / 2 for i in x], e_lifts, w, label="CM Exposed", color=MPL_BLUE)
+    ax.bar([i + w / 2 for i in x], u_lifts, w, label="Unexposed", color=MPL_ORANGE)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(stages, fontsize=10)
+    ax.set_ylabel("Lift (pt)")
+    ax.set_title("Attitude Change Lift: Exposed vs Unexposed")
+    ax.legend(fontsize=9)
+    for i in x:
+        ax.text(i - w / 2, e_lifts[i] + 0.2, f"{e_lifts[i]:.1f}", ha="center", fontsize=8)
+        ax.text(i + w / 2, u_lifts[i] + 0.2, f"{u_lifts[i]:.1f}", ha="center", fontsize=8)
+    fig.tight_layout()
+    _add_chart_image(slide, fig, left=Inches(0.5), top=Inches(1.1), width=Inches(6.3), height=Inches(5.5))
+    # Table on right
     lift_rows = []
-    for stage, bef, aft in [("Awareness", "AWARENESS_BEFORE", "AWARENESS_AFTER"),
-                             ("Interest", "INTEREST_BEFORE", "INTEREST_AFTER"),
-                             ("Consider", "CONSIDER_BEFORE", "CONSIDER_AFTER"),
-                             ("Purchase", "PURCHASE_BEFORE", "PURCHASE_AFTER")]:
-        e_lift = (exposed[aft] - exposed[bef]).mean() if len(exposed) > 0 else 0
-        u_lift = (unexposed[aft] - unexposed[bef]).mean() if len(unexposed) > 0 else 0
-        lift_rows.append([stage, f"{e_lift:.2f} pt", f"{u_lift:.2f} pt", f"{e_lift - u_lift:.2f} pt"])
-    _add_table(slide, ["Stage", "CM Exposed", "Unexposed", "Diff"], lift_rows)
+    for i, stage in enumerate(stages):
+        diff = e_lifts[i] - u_lifts[i]
+        lift_rows.append([stage, f"{e_lifts[i]:.2f}", f"{u_lifts[i]:.2f}", f"{diff:.2f}"])
+    _add_table(slide, ["Stage", "Exposed", "Unexposed", "Diff"], lift_rows, left=Inches(7.2), top=Inches(1.2), width=Inches(5.6))
 
     # ===== Slide 6: Site Visit + Purchase =====
     slide = _add_slide()
@@ -766,61 +843,77 @@ def generate_pptx_report():
         Sessions=("SESSION_ID", "count"), CVs=("CONVERSION_FLAG", "sum"), AvgPV=("PAGE_VIEWS", "mean")
     ).reset_index()
     ref_data["CVR"] = (ref_data["CVs"] / ref_data["Sessions"] * 100).round(1)
-    ref_rows = [[r["REFERRER_TYPE"], f"{r['Sessions']:,}", f"{r['CVs']:,}", f"{r['CVR']:.1f}%", f"{r['AvgPV']:.1f}"]
-                for _, r in ref_data.sort_values("Sessions", ascending=False).iterrows()]
-    _add_table(slide, ["Referrer", "Sessions", "CVs", "CVR", "Avg PV"], ref_rows, top=Inches(1.2))
-    # Purchase sub-table
+    ref_data = ref_data.sort_values("Sessions", ascending=False)
+    # Site visit pie chart
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    ax1.pie(ref_data["Sessions"].values, labels=ref_data["REFERRER_TYPE"].values,
+            autopct="%1.1f%%", colors=MPL_COLORS[:len(ref_data)], startangle=90)
+    ax1.set_title("Site Sessions by Referrer", fontsize=11)
+    # Purchase bar chart
     cat_data = df_purchase_f.groupby("PRODUCT_CATEGORY").agg(
         Total=("AMOUNT", "sum"), Count=("PURCHASE_ID", "count")
-    ).reset_index()
-    cat_data["Avg"] = (cat_data["Total"] / cat_data["Count"]).round(0)
-    pur_rows = [[r["PRODUCT_CATEGORY"], f"JPY {r['Total']:,.0f}", f"{r['Count']:,}", f"JPY {r['Avg']:,.0f}"]
-                for _, r in cat_data.sort_values("Total", ascending=False).iterrows()]
-    n_ref_rows = min(len(ref_rows), 20) + 1
-    pur_top = Inches(1.2) + Inches(0.35 * n_ref_rows) + Inches(0.5)
-    txBox = slide.shapes.add_textbox(Inches(0.5), pur_top - Inches(0.4), Inches(6), Inches(0.4))
-    p = txBox.text_frame.paragraphs[0]
-    p.text = "Offline Purchase by Category"
-    p.font.size = Pt(18)
-    p.font.bold = True
-    p.font.color.rgb = BLUE
-    _add_table(slide, ["Category", "Total Amount", "Count", "Avg Amount"], pur_rows, top=pur_top)
+    ).reset_index().sort_values("Total", ascending=True)
+    ax2.barh(cat_data["PRODUCT_CATEGORY"].values, cat_data["Total"].values, color=MPL_GREEN)
+    ax2.set_xlabel("Total Amount (JPY)")
+    ax2.set_title("Purchase by Category", fontsize=11)
+    ax2.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x / 1e6:.1f}M"))
+    fig.tight_layout()
+    _add_chart_image(slide, fig, left=Inches(0.3), top=Inches(1.1), width=Inches(12.5), height=Inches(5.5))
 
-    # ===== Slide 7: Store + App =====
+    # ===== Slide 7: Store Visit + App (charts side by side) =====
     slide = _add_slide()
     _add_title_bar(slide, "Store Visit & App Analysis")
     store_data = df_store_f.groupby("STORE_NAME").agg(
         Visits=("VISIT_ID", "count"), AvgStay=("STAY_MINUTES", "mean")
-    ).reset_index()
-    store_data["AvgStay"] = store_data["AvgStay"].round(1)
-    st_rows = [[r["STORE_NAME"], f"{r['Visits']:,}", f"{r['AvgStay']:.1f} min"]
-               for _, r in store_data.sort_values("Visits", ascending=False).iterrows()]
-    _add_table(slide, ["Store", "Visits", "Avg Stay"], st_rows, top=Inches(1.2))
-    # App sub-table
+    ).reset_index().sort_values("Visits", ascending=True)
     dl_by_app = df_app_dl_f.groupby("APP_NAME").agg(DL=("DOWNLOAD_ID", "count")).reset_index()
     launch_by_app = df_app_launch_f.groupby("APP_NAME").agg(Launch=("LAUNCH_ID", "count")).reset_index()
     app_data = dl_by_app.merge(launch_by_app, on="APP_NAME", how="outer").fillna(0)
-    app_rows = [[r["APP_NAME"], f"{int(r['DL']):,}", f"{int(r['Launch']):,}"]
-                for _, r in app_data.iterrows()]
-    n_st_rows = min(len(st_rows), 20) + 1
-    app_top = Inches(1.2) + Inches(0.35 * n_st_rows) + Inches(0.5)
-    txBox = slide.shapes.add_textbox(Inches(0.5), app_top - Inches(0.4), Inches(6), Inches(0.4))
-    p = txBox.text_frame.paragraphs[0]
-    p.text = "App Downloads & Launches"
-    p.font.size = Pt(18)
-    p.font.bold = True
-    p.font.color.rgb = BLUE
-    _add_table(slide, ["App", "Downloads", "Launches"], app_rows, top=app_top)
+    # Charts
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    # Store visits
+    ax1.barh(store_data["STORE_NAME"].values, store_data["Visits"].values, color=MPL_BLUE)
+    ax1.set_xlabel("Visit Count")
+    ax1.set_title("Store Visits", fontsize=11)
+    # App DL vs Launch
+    x = range(len(app_data))
+    w = 0.35
+    ax2.bar([i - w / 2 for i in x], app_data["DL"].values.astype(int), w, label="Downloads", color=MPL_ORANGE)
+    ax2.bar([i + w / 2 for i in x], app_data["Launch"].values.astype(int), w, label="Launches", color=MPL_PURPLE)
+    ax2.set_xticks(list(x))
+    ax2.set_xticklabels(app_data["APP_NAME"].values, fontsize=8, rotation=30, ha="right")
+    ax2.set_ylabel("Count")
+    ax2.set_title("App Downloads & Launches", fontsize=11)
+    ax2.legend(fontsize=8)
+    fig.tight_layout()
+    _add_chart_image(slide, fig, left=Inches(0.3), top=Inches(1.1), width=Inches(12.5), height=Inches(5.5))
 
-    # ===== Slide 8: Loyalty =====
+    # ===== Slide 8: Loyalty (pie + bar) =====
     slide = _add_slide()
     _add_title_bar(slide, "Customer Loyalty")
     seg_data = df_loyalty.groupby("LOYALTY_SEGMENT").agg(
         Count=("CUSTOMER_ID", "count"), AvgNPS=("NPS_SCORE", "mean"), AvgLTV=("LTV_AMOUNT", "mean")
     ).reset_index()
-    seg_rows = [[r["LOYALTY_SEGMENT"], f"{r['Count']:,}", f"{r['AvgNPS']:.1f}", f"JPY {r['AvgLTV']:,.0f}"]
-                for _, r in seg_data.iterrows()]
-    _add_table(slide, ["Segment", "Count", "Avg NPS", "Avg LTV"], seg_rows)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+    # Segment distribution pie
+    ax1.pie(seg_data["Count"].values, labels=seg_data["LOYALTY_SEGMENT"].values,
+            autopct="%1.1f%%", colors=MPL_COLORS[:len(seg_data)], startangle=90)
+    ax1.set_title("Loyalty Segment Distribution", fontsize=11)
+    # NPS & LTV bar
+    x = range(len(seg_data))
+    ax2.bar(list(x), seg_data["AvgNPS"].values, color=MPL_BLUE, alpha=0.8, label="Avg NPS")
+    ax2b = ax2.twinx()
+    ax2b.plot(list(x), seg_data["AvgLTV"].values, color=MPL_RED, marker="s", linewidth=2, label="Avg LTV")
+    ax2.set_xticks(list(x))
+    ax2.set_xticklabels(seg_data["LOYALTY_SEGMENT"].values, fontsize=9)
+    ax2.set_ylabel("Avg NPS")
+    ax2b.set_ylabel("Avg LTV (JPY)")
+    ax2.set_title("NPS & LTV by Segment", fontsize=11)
+    ax2.legend(loc="upper left", fontsize=8)
+    ax2b.legend(loc="upper right", fontsize=8)
+    ax2b.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x / 1e3:.0f}K"))
+    fig.tight_layout()
+    _add_chart_image(slide, fig, left=Inches(0.3), top=Inches(1.1), width=Inches(12.5), height=Inches(5.5))
 
     # Output
     output = io.BytesIO()
