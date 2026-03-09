@@ -815,7 +815,7 @@ with tab_ai:
         # キャンペーン一覧
         lines.append(f"\n【キャンペーン一覧】({len(df_campaigns)}件)")
         for _, r in df_campaigns.iterrows():
-            lines.append(f"- {r['CAMPAIGN_NAME']} (ID:{r['CAMPAIGN_ID']}, {r['START_DATE']}~{r['END_DATE']}, 予算:{r['BUDGET']:,.0f}円)")
+            lines.append(f"- {r['CAMPAIGN_NAME']} (ID:{r['CAMPAIGN_ID']}, {r['START_DATE']}~{r['END_DATE']}, 予算:{r['BUDGET_MM']}百万円)")
 
         # TV視聴
         lines.append(f"\n【TV視聴データ】(フィルタ後 {len(df_tv_f):,}件)")
@@ -907,47 +907,56 @@ with tab_ai:
     for i, q in enumerate(sample_questions):
         with sample_cols[i]:
             if st.button(q, key=f"sample_{i}"):
-                st.session_state.messages.append({"role": "user", "content": q})
+                st.session_state["ai_query_input"] = q
 
     st.markdown("---")
 
-    # --- チャット履歴表示 ---
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
     # --- ユーザー入力 ---
-    if user_input := st.chat_input("データについて質問してください..."):
+    col_input, col_btn = st.columns([5, 1])
+    with col_input:
+        user_input = st.text_input(
+            "質問を入力",
+            value=st.session_state.get("ai_query_input", ""),
+            key="ai_text_input",
+            label_visibility="collapsed",
+            placeholder="データについて質問してください...",
+        )
+    with col_btn:
+        send_clicked = st.button("送信", key="ai_send_btn", type="primary")
+
+    # --- 送信処理 ---
+    if send_clicked and user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.markdown(user_input)
+        st.session_state["ai_query_input"] = ""
 
-    # --- LLM応答生成 ---
-    if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-        with st.chat_message("assistant"):
-            with st.spinner("分析中..."):
-                data_context = build_data_context()
-                user_question = st.session_state.messages[-1]["content"]
+        with st.spinner("分析中..."):
+            data_context = build_data_context()
 
-                system_prompt = f"""あなたはSTADIA360統合マーケティングプラットフォームのデータアナリストです。
+            system_prompt = f"""あなたはSTADIA360統合マーケティングプラットフォームのデータアナリストです。
 以下のデータサマリーに基づいて、ユーザーの質問に日本語で丁寧に回答してください。
 具体的な数値を引用し、マーケティング施策への示唆を含めてください。
 
 {data_context}"""
 
-                # エスケープ処理（SQLインジェクション防止）
-                escaped_system = system_prompt.replace("'", "''").replace("\\", "\\\\")
-                escaped_question = user_question.replace("'", "''").replace("\\", "\\\\")
+            escaped_system = system_prompt.replace("'", "''").replace("\\", "\\\\")
+            escaped_question = user_input.replace("'", "''").replace("\\", "\\\\")
 
-                prompt_for_complete = f"{escaped_system}\n\nユーザーの質問: {escaped_question}"
+            prompt_for_complete = f"{escaped_system}\n\nユーザーの質問: {escaped_question}"
 
-                try:
-                    result = session.sql(
-                        f"SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', '{prompt_for_complete}') AS RESPONSE"
-                    ).collect()
-                    response_text = result[0]["RESPONSE"]
-                except Exception as e:
-                    response_text = f"エラーが発生しました: {str(e)}"
+            try:
+                result = session.sql(
+                    f"SELECT SNOWFLAKE.CORTEX.COMPLETE('claude-3-5-sonnet', '{prompt_for_complete}') AS RESPONSE"
+                ).collect()
+                response_text = result[0]["RESPONSE"]
+            except Exception as e:
+                response_text = f"エラーが発生しました: {str(e)}"
 
-                st.markdown(response_text)
-                st.session_state.messages.append({"role": "assistant", "content": response_text})
+            st.session_state.messages.append({"role": "assistant", "content": response_text})
+
+    # --- チャット履歴表示 ---
+    for msg in reversed(st.session_state.messages):
+        if msg["role"] == "user":
+            st.markdown(f"**Q:** {msg['content']}")
+        else:
+            st.markdown(f"**A:** {msg['content']}")
+        st.markdown("---")

@@ -13,6 +13,13 @@
         "name": "stadia360_analytics",
         "description": "STADIA360統合マーケティング基盤のデータを分析するツール。テレビ視聴ログ（チャンネル別・時間帯別・CM接触率）、顧客ロイヤリティ（NPS・LTV・セグメント）、態度変容（認知・興味・検討・購入の前後比較）、サイト来訪（流入経路・PV・CV）、オフライン購買（店舗・カテゴリ・金額）、来店（店舗・滞在時間）、アプリDL/起動（アプリ別・OS別）のデータをクエリできます。キャンペーンIDで横断分析が可能です。"
       }
+    },
+    {
+      "tool_spec": {
+        "type": "data_to_chart",
+        "name": "data_to_chart",
+        "description": "Generates visualizations from data"
+      }
     }
   ],
   "tool_resources": {
