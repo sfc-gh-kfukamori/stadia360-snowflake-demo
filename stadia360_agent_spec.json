@@ -20,6 +20,12 @@
         "name": "data_to_chart",
         "description": "Generates visualizations from data"
       }
+    },
+    {
+      "tool_spec": {
+        "type": "web_search",
+        "name": "web_search"
+      }
     }
   ],
   "tool_resources": {

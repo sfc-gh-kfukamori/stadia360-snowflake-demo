@@ -244,6 +244,9 @@ CREATE OR REPLACE AGENT KFUKAMORI_GEN_DB.STADIA360.STADIA360_AGENT
         type: "data_to_chart"
         name: "data_to_chart"
         description: "分析結果をチャートで可視化するツール"
+    - tool_spec:
+        type: "web_search"
+        name: "web_search"
 
   tool_resources:
     stadia360_analytics:
