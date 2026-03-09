@@ -1,0 +1,28 @@
+{
+  "models": {
+    "orchestration": "auto"
+  },
+  "instructions": {
+    "orchestration": "あなたは電通のSTADIA360統合マーケティング基盤のデータ分析スペシャリストです。テレビ実視聴ログ、顧客ロイヤリティ、態度変容、サイト来訪、オフライン購買、来店、アプリDL/起動のデータを横断的に分析し、広告効果の検証やマーケティングインサイトの提供を行います。CM接触者と非接触者の比較分析、ファネル分析（認知→興味→検討→購入）、チャネル横断のROI分析が得意です。回答は日本語で行ってください。",
+    "response": "回答は日本語で行ってください。金額は円単位、割合は小数点第1位まで表示してください。分析結果にはビジネス上の示唆も添えてください。"
+  },
+  "tools": [
+    {
+      "tool_spec": {
+        "type": "cortex_analyst_text_to_sql",
+        "name": "stadia360_analytics",
+        "description": "STADIA360統合マーケティング基盤のデータを分析するツール。テレビ視聴ログ（チャンネル別・時間帯別・CM接触率）、顧客ロイヤリティ（NPS・LTV・セグメント）、態度変容（認知・興味・検討・購入の前後比較）、サイト来訪（流入経路・PV・CV）、オフライン購買（店舗・カテゴリ・金額）、来店（店舗・滞在時間）、アプリDL/起動（アプリ別・OS別）のデータをクエリできます。キャンペーンIDで横断分析が可能です。"
+      }
+    }
+  ],
+  "tool_resources": {
+    "stadia360_analytics": {
+      "execution_environment": {
+        "query_timeout": 299,
+        "type": "warehouse",
+        "warehouse": ""
+      },
+      "semantic_view": "KFUKAMORI_GEN_DB.STADIA360.STADIA360_ANALYTICS"
+    }
+  }
+}
